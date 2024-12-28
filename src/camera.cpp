@@ -121,10 +121,10 @@ void Camera::pan(int dx, int dy)
   const float speed = 0.01f;
 
   m_position += m_up * (dy * (speed * sizeFactor));
-  //m_target += m_up * (dy * (speed * sizeFactor));
+  m_target += m_up * (dy * (speed * sizeFactor));
 
   m_position += m_right * (-dx * (speed * sizeFactor));
-  //m_target += m_right * (-dx * (speed * sizeFactor));
+  m_target += m_right * (-dx * (speed * sizeFactor));
 }
 
 

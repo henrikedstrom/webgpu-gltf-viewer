@@ -4,6 +4,12 @@
 #include <iostream>
 #include <vector>
 
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_FORCE_RIGHT_HANDED
+#include <glm/ext.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtx/polar_coordinates.hpp>
+
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -15,6 +21,8 @@
 #include <webgpu/webgpu_glfw.h>
 #endif
 
+#include "camera.h"
+
 wgpu::Instance instance;
 wgpu::Adapter adapter;
 wgpu::Device device;
@@ -23,46 +31,151 @@ wgpu::Buffer vertexBuffer;
 wgpu::Buffer indexBuffer;
 wgpu::Buffer uniformBuffer;
 wgpu::BindGroup bindGroup;
-
 wgpu::Surface surface;
 wgpu::TextureFormat format;
+wgpu::Texture depthTexture;
+wgpu::TextureView depthTextureView;
+
+Camera camera;
 const uint32_t kWidth = 512;
 const uint32_t kHeight = 512;
 float rotationAngle = 0.0f;
 bool isAnimating = true; // Animation starts active
+bool quitApp = false;
+
+struct Uniforms {
+  glm::mat4 viewMatrix;
+  glm::mat4 projectionMatrix;
+  glm::mat4 modelMatrix;
+};
+
+Uniforms uniforms;
 
 const char shaderCode[] = R"(
-  
-  @group(0) @binding(0) var<uniform> transformationMatrix: mat4x4<f32>;
 
-  struct VertexOutput {
-    @builtin(position) position: vec4<f32>,  // Position of the vertex
-    @location(0) fragColor: vec3<f32>      // Color passed to the fragment shader
-  };
+// Define a struct for the uniform data
+struct Uniforms {
+    viewMatrix: mat4x4<f32>,
+    projectionMatrix: mat4x4<f32>,
+    modelMatrix: mat4x4<f32>
+};
 
-  @vertex
-  fn vertexMain(
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) fragColor: vec3<f32>
+};
+
+@vertex
+fn vertexMain(
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) color: vec3<f32>
-  ) -> VertexOutput {
-
-    // Convert position to vec3 to apply 4x4 matrix
-    let transformedPosition = transformationMatrix * vec4<f32>(position, 1.0);
+) -> VertexOutput {
+    // Apply model, view, and projection transformations
+    let worldPosition = uniforms.modelMatrix * vec4<f32>(position, 1.0);
+    let viewPosition = uniforms.viewMatrix * worldPosition;
+    let clipPosition = uniforms.projectionMatrix * viewPosition;
 
     var output: VertexOutput;
-    output.position = transformedPosition;
+    output.position = clipPosition;
     output.fragColor = normal * 0.5 + 0.5; // Convert normal to color
     return output;
-  }
+}
 
-  @fragment
-  fn fragmentMain(
+@fragment
+fn fragmentMain(
     @location(0) fragColor: vec3<f32>  // Input: interpolated color from the vertex shader
-  ) -> @location(0) vec4<f32> {
+) -> @location(0) vec4<f32> {
     return vec4<f32>(fragColor, 1.0); // Output the color with full opacity
-  }
+}
+
 )";
+
+//----------------------------------------------------------------------
+// Input Callbacks
+
+bool mouseTumble = false;
+bool mousePan = false;
+glm::vec2 mouseLastPos;
+
+void CursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
+  if (mouseTumble || mousePan) {
+    glm::vec2 currentMouse = glm::vec2(xpos, ypos);
+    glm::vec2 delta = currentMouse - mouseLastPos;
+    mouseLastPos = currentMouse;
+    int xrel = static_cast<int>(delta.x);
+    int yrel = static_cast<int>(delta.y);
+    if (mouseTumble) {
+      camera.tumble(xrel, yrel);
+    }
+    else if (mousePan) {
+      camera.pan(xrel, yrel);
+    }
+  }
+}
+
+void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    Camera* camera = static_cast<Camera*>(glfwGetWindowUserPointer(window));
+    camera->zoom(0, static_cast<int>(yoffset * 30)); // Adjust zoom factor as needed
+}
+
+void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+  if (button == GLFW_MOUSE_BUTTON_LEFT) {
+    switch (action) {
+    case GLFW_PRESS:
+      if (mods & GLFW_MOD_SHIFT) {
+        mousePan = true;
+      } else {
+        mouseTumble = true;
+      }
+      double xpos, ypos;
+      glfwGetCursorPos(window, &xpos, &ypos);
+      mouseLastPos = glm::vec2(xpos, ypos);
+      break;
+    case GLFW_RELEASE:
+      mouseTumble = false;
+      mousePan = false;
+      break;
+    }
+  }
+}
+
+void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    static bool keyState[GLFW_KEY_LAST] = {false};
+
+    if (key >= 0 && key < GLFW_KEY_LAST) {
+      bool keyPressed = action == GLFW_PRESS && !keyState[key];
+      bool keyReleased = action == GLFW_RELEASE && keyState[key];
+
+      if (action == GLFW_PRESS) {
+        keyState[key] = true;
+      } else if (action == GLFW_RELEASE) {
+        keyState[key] = false;
+      }
+
+      if (keyPressed) {
+        if (key == GLFW_KEY_A) {
+          isAnimating = !isAnimating; // Toggle the animation state
+        } else if (key == GLFW_KEY_ESCAPE) {
+          quitApp = true; // Quit the application
+        }
+      }
+    }
+}
+
+void SetupInputCallbacks(GLFWwindow* window, Camera* camera) {
+    // Set the camera as the user pointer for the GLFW window
+    glfwSetWindowUserPointer(window, camera);
+
+    // Register the callbacks
+    glfwSetCursorPosCallback(window, CursorPositionCallback);
+    glfwSetScrollCallback(window, ScrollCallback);
+    glfwSetMouseButtonCallback(window, MouseButtonCallback);
+    glfwSetKeyCallback(window, KeyCallback);
+}
+
 
 //----------------------------------------------------------------------
 // Model loading
@@ -171,64 +284,6 @@ void LoadModel(const std::string& filename) {
 
 //----------------------------------------------------------------------
 
-const float transformationMatrix[16] = {
-  1.0f, 0.0f, 0.0f, 0.0f,
-  0.0f, 1.0f, 0.0f, 0.0f,
-  0.0f, 0.0f, 1.0f, 0.0f,
-  0.0f, 0.0f, 0.0f, 1.0f,
-};
-
-void UpdateTransformationMatrix() {
-  // Rotation angle to correct orientation (90 degrees in radians for X-axis)
-  float xAxisAngle = -(M_PI / 2.0f); // 90 degrees
-  
-  // Calculate the rotation matrix for the X-axis
-  float cosX = std::cos(xAxisAngle);
-  float sinX = std::sin(xAxisAngle);
-
-  float xRotationMatrix[16] = {
-    1.0f,  0.0f,   0.0f, 0.0f,
-    0.0f,  cosX,  -sinX, 0.0f,
-    0.0f,  sinX,   cosX, 0.0f,
-    0.0f,  0.0f,   0.0f, 1.0f,
-  };
-
-  // Calculate the rotation matrix for the Y-axis (dynamic rotation)
-  float cosTheta = std::cos(rotationAngle);
-  float sinTheta = std::sin(rotationAngle);
-
-  float yRotationMatrix[16] = {
-    cosTheta,  0.0f, sinTheta, 0.0f,
-    0.0f,      1.0f, 0.0f,    0.0f,
-   -sinTheta,  0.0f, cosTheta, 0.0f,
-    0.0f,      0.0f, 0.0f,    1.0f,
-  };
-
-  // Combine the rotations (apply X-axis rotation first, then Y-axis rotation)
-  float combinedMatrix[16];
-  for (int row = 0; row < 4; ++row) {
-    for (int col = 0; col < 4; ++col) {
-      combinedMatrix[row * 4 + col] =
-          xRotationMatrix[row * 4 + 0] * yRotationMatrix[0 * 4 + col] +
-          xRotationMatrix[row * 4 + 1] * yRotationMatrix[1 * 4 + col] +
-          xRotationMatrix[row * 4 + 2] * yRotationMatrix[2 * 4 + col] +
-          xRotationMatrix[row * 4 + 3] * yRotationMatrix[3 * 4 + col];
-    }
-  }
-
-  // Write the updated matrix to the uniform buffer
-  device.GetQueue().WriteBuffer(uniformBuffer, 0, combinedMatrix, sizeof(combinedMatrix));
-}
-
-
-void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-  if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-    isAnimating = !isAnimating; // Toggle the animation state
-  }
-}
-
-//----------------------------------------------------------------------
-
 void ConfigureSurface() {
   wgpu::SurfaceCapabilities capabilities;
   surface.GetCapabilities(adapter, &capabilities);
@@ -304,12 +359,17 @@ void CreateIndexBuffer(const std::vector<uint32_t>& indexData) {
 
 void CreateUniformBuffer() {
   wgpu::BufferDescriptor bufferDescriptor{};
-  bufferDescriptor.size = sizeof(transformationMatrix);
+  bufferDescriptor.size = sizeof(Uniforms);
   bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
 
   uniformBuffer = device.CreateBuffer(&bufferDescriptor);
 
-  device.GetQueue().WriteBuffer(uniformBuffer, 0, transformationMatrix, sizeof(transformationMatrix));
+  // Initialize the uniforms with default values
+  uniforms.viewMatrix = glm::mat4(1.0f); // Identity matrix
+  uniforms.projectionMatrix = glm::mat4(1.0f); // Identity matrix
+  uniforms.modelMatrix = glm::mat4(1.0f); // Identity matrix
+
+  device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniforms, sizeof(Uniforms));
 }
 
 void CreateBindGroup(wgpu::BindGroupLayout bindGroupLayout) {
@@ -317,7 +377,7 @@ void CreateBindGroup(wgpu::BindGroupLayout bindGroupLayout) {
   bindGroupEntry.binding = 0;
   bindGroupEntry.buffer = uniformBuffer;
   bindGroupEntry.offset = 0;
-  bindGroupEntry.size = sizeof(transformationMatrix);
+  bindGroupEntry.size = sizeof(Uniforms);
 
   wgpu::BindGroupDescriptor bindGroupDescriptor{};
   bindGroupDescriptor.layout = bindGroupLayout;
@@ -325,6 +385,16 @@ void CreateBindGroup(wgpu::BindGroupLayout bindGroupLayout) {
   bindGroupDescriptor.entries = &bindGroupEntry;
 
   bindGroup = device.CreateBindGroup(&bindGroupDescriptor);
+}
+
+void CreateDepthTexture() {
+  wgpu::TextureDescriptor depthTextureDescriptor{};
+  depthTextureDescriptor.size = {kWidth, kHeight, 1};
+  depthTextureDescriptor.format = wgpu::TextureFormat::Depth24PlusStencil8;
+  depthTextureDescriptor.usage = wgpu::TextureUsage::RenderAttachment;
+
+  depthTexture = device.CreateTexture(&depthTextureDescriptor);
+  depthTextureView = depthTexture.CreateView();
 }
 
 void CreateRenderPipeline() {
@@ -358,12 +428,17 @@ void CreateRenderPipeline() {
     .targets = &colorTargetState
   };
 
+  wgpu::DepthStencilState depthStencilState{
+    .format = wgpu::TextureFormat::Depth24PlusStencil8,
+    .depthWriteEnabled = true,
+    .depthCompare = wgpu::CompareFunction::Less,
+  };
 
   // Step 1: Create an explicit bind group layout
   wgpu::BindGroupLayoutEntry bindGroupLayoutEntry{
     .binding = 0,
     .visibility = wgpu::ShaderStage::Vertex,
-    .buffer = {.type = wgpu::BufferBindingType::Uniform, .hasDynamicOffset = false, .minBindingSize = sizeof(transformationMatrix)},
+    .buffer = {.type = wgpu::BufferBindingType::Uniform, .hasDynamicOffset = false, .minBindingSize = sizeof(Uniforms)},
   };
 
   wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
@@ -393,10 +468,33 @@ void CreateRenderPipeline() {
       .buffers = &vertexBufferLayout,     
     },
     .primitive = {.topology = wgpu::PrimitiveTopology::TriangleList},
+    .depthStencil = &depthStencilState,
     .fragment = &fragmentState
   };
 
   pipeline = device.CreateRenderPipeline(&descriptor);
+}
+
+
+void UpdateUniforms() {
+  // Rotation angle to correct orientation (90 degrees in radians for X-axis)
+  float xAxisAngle = M_PI / 2.0f; // 90 degrees
+
+  // Create the X-axis rotation matrix
+  glm::mat4 xRotationMatrix = glm::rotate(glm::mat4(1.0f), xAxisAngle, glm::vec3(1.0f, 0.0f, 0.0f));
+
+  // Create the Y-axis rotation matrix (dynamic rotation angle)
+  glm::mat4 yRotationMatrix = glm::rotate(glm::mat4(1.0f), -rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+
+  // Combine the rotations: apply X-axis rotation first, then Y-axis rotation
+  uniforms.modelMatrix = yRotationMatrix * xRotationMatrix;
+
+  // Update the view and projection matrices from the camera
+  uniforms.viewMatrix = camera.getViewMatrix();
+  uniforms.projectionMatrix = camera.getProjectionMatrix();
+
+  // Write the updated uniforms to the GPU
+  device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniforms, sizeof(Uniforms));
 }
 
 void Render() {
@@ -407,10 +505,10 @@ void Render() {
     if (rotationAngle > 2.0f * M_PI) {
       rotationAngle -= 2.0f * M_PI; // Keep the angle within [0, 2π]
     }
-
-    // Update the transformation matrix
-    UpdateTransformationMatrix();
   }
+
+  // Update camera and model transformations
+  UpdateUniforms();
 
   wgpu::SurfaceTexture surfaceTexture;
   surface.GetCurrentTexture(&surfaceTexture);
@@ -422,9 +520,19 @@ void Render() {
     .clearValue = {.r = 0.0f, .g = 0.2f, .b = 0.4f, .a = 1.0f}
   };
 
+  wgpu::RenderPassDepthStencilAttachment depthAttachment{
+    .view = depthTextureView,
+    .depthLoadOp = wgpu::LoadOp::Clear,
+    .depthStoreOp = wgpu::StoreOp::Store,
+    .depthClearValue = 1.0f,  // Clear to the farthest value
+    .stencilLoadOp = wgpu::LoadOp::Clear,
+    .stencilStoreOp = wgpu::StoreOp::Store,
+  };
+
   wgpu::RenderPassDescriptor renderpass{
     .colorAttachmentCount = 1,
-    .colorAttachments = &attachment
+    .colorAttachments = &attachment,
+    .depthStencilAttachment = &depthAttachment
   };
 
   wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
@@ -444,6 +552,7 @@ void InitGraphics() {
   CreateVertexBuffer(vertices);
   CreateIndexBuffer(indices);
   CreateUniformBuffer();
+  CreateDepthTexture();
   CreateRenderPipeline();
 }
 
@@ -457,7 +566,7 @@ void Start() {
       glfwCreateWindow(kWidth, kHeight, "WebGPU window", nullptr, nullptr);
 
   // Set the mouse button callback
-  glfwSetMouseButtonCallback(window, MouseButtonCallback);
+  SetupInputCallbacks(window, &camera);
 
 #if defined(__EMSCRIPTEN__)
   wgpu::SurfaceDescriptorFromCanvasHTMLSelector canvasDesc{};
@@ -469,14 +578,23 @@ void Start() {
   surface = wgpu::glfw::CreateSurfaceForWindow(instance, window);
 #endif
 
+  camera.init(kWidth, kHeight);
+
   LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
   InitGraphics();
+
+  float lastFrameTime = 0.0f;
 
 #if defined(__EMSCRIPTEN__)
   emscripten_set_main_loop(Render, 0, false);
 #else
-  while (!glfwWindowShouldClose(window)) {
+  while (!glfwWindowShouldClose(window) && !quitApp) {
+    float currentFrameTime = glfwGetTime();
+    float deltaTime = currentFrameTime - lastFrameTime;
+    lastFrameTime = currentFrameTime;
+
     glfwPollEvents();
+
     Render();
     surface.Present();
     instance.ProcessEvents();
