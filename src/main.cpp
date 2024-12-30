@@ -1,10 +1,12 @@
-#include <GLFW/glfw3.h>
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#include <GLFW/glfw3.h>
 #include <webgpu/webgpu_cpp.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -25,6 +27,7 @@
 #endif
 
 #include "camera.h"
+#include "orbit_controls.h"
 
 wgpu::Instance instance;
 wgpu::Adapter adapter;
@@ -40,6 +43,7 @@ wgpu::Texture depthTexture;
 wgpu::TextureView depthTextureView;
 
 Camera camera;
+std::unique_ptr<OrbitControls> controls;
 const uint32_t kWidth = 512;
 const uint32_t kHeight = 512;
 float rotationAngle = 0.0f;
@@ -57,63 +61,6 @@ Uniforms uniforms;
 
 //----------------------------------------------------------------------
 // Input Callbacks
-
-bool mouseTumble = false;
-bool mousePan = false;
-glm::vec2 mouseLastPos;
-
-void CursorPositionCallback(GLFWwindow *window, double xpos, double ypos)
-{
-    if (mouseTumble || mousePan)
-    {
-        glm::vec2 currentMouse = glm::vec2(xpos, ypos);
-        glm::vec2 delta = currentMouse - mouseLastPos;
-        mouseLastPos = currentMouse;
-        int xrel = static_cast<int>(delta.x);
-        int yrel = static_cast<int>(delta.y);
-        if (mouseTumble)
-        {
-            camera.tumble(xrel, yrel);
-        }
-        else if (mousePan)
-        {
-            camera.pan(xrel, yrel);
-        }
-    }
-}
-
-void ScrollCallback(GLFWwindow *window, double xoffset, double yoffset)
-{
-    Camera *camera = static_cast<Camera *>(glfwGetWindowUserPointer(window));
-    camera->zoom(0, static_cast<int>(yoffset * 30)); // Adjust zoom factor as needed
-}
-
-void MouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
-{
-    if (button == GLFW_MOUSE_BUTTON_LEFT)
-    {
-        switch (action)
-        {
-        case GLFW_PRESS:
-            if (mods & GLFW_MOD_SHIFT)
-            {
-                mousePan = true;
-            }
-            else
-            {
-                mouseTumble = true;
-            }
-            double xpos, ypos;
-            glfwGetCursorPos(window, &xpos, &ypos);
-            mouseLastPos = glm::vec2(xpos, ypos);
-            break;
-        case GLFW_RELEASE:
-            mouseTumble = false;
-            mousePan = false;
-            break;
-        }
-    }
-}
 
 void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
@@ -145,18 +92,6 @@ void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
             }
         }
     }
-}
-
-void SetupInputCallbacks(GLFWwindow *window, Camera *camera)
-{
-    // Set the camera as the user pointer for the GLFW window
-    glfwSetWindowUserPointer(window, camera);
-
-    // Register the callbacks
-    glfwSetCursorPosCallback(window, CursorPositionCallback);
-    glfwSetScrollCallback(window, ScrollCallback);
-    glfwSetMouseButtonCallback(window, MouseButtonCallback);
-    glfwSetKeyCallback(window, KeyCallback);
 }
 
 //----------------------------------------------------------------------
@@ -511,8 +446,8 @@ void UpdateUniforms()
     uniforms.modelMatrix = yRotationMatrix * xRotationMatrix;
 
     // Update the view and projection matrices from the camera
-    uniforms.viewMatrix = camera.getViewMatrix();
-    uniforms.projectionMatrix = camera.getProjectionMatrix();
+    uniforms.viewMatrix = camera.GetViewMatrix();
+    uniforms.projectionMatrix = camera.GetProjectionMatrix();
 
     // Write the updated uniforms to the GPU
     device.GetQueue().WriteBuffer(uniformBuffer, 0, &uniforms, sizeof(Uniforms));
@@ -586,8 +521,9 @@ void Start()
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     GLFWwindow *window = glfwCreateWindow(kWidth, kHeight, "WebGPU window", nullptr, nullptr);
 
-    // Set the mouse button callback
-    SetupInputCallbacks(window, &camera);
+    // Setup mouse and keyboard input callbacks
+    controls = std::make_unique<OrbitControls>(window, &camera);
+    glfwSetKeyCallback(window, KeyCallback);
 
 #if defined(__EMSCRIPTEN__)
     wgpu::SurfaceDescriptorFromCanvasHTMLSelector canvasDesc{};
@@ -599,7 +535,7 @@ void Start()
     surface = wgpu::glfw::CreateSurfaceForWindow(instance, window);
 #endif
 
-    camera.init(kWidth, kHeight);
+    camera.ResizeViewport(kWidth, kHeight);
 
     LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
     InitGraphics();
@@ -621,6 +557,10 @@ void Start()
         surface.Present();
         instance.ProcessEvents();
     }
+
+    // Cleanup (native only)
+    glfwDestroyWindow(window);
+    glfwTerminate();
 #endif
 }
 

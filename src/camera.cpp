@@ -2,140 +2,117 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-void Camera::init(int width, int height)
+namespace
 {
-    m_width = width;
-    m_height = height;
+constexpr float kTumbleSpeed = 0.004f;
+constexpr float kTiltClamp = 0.98f; // Restricts the forward vector's vertical component to avoid gimbal lock.
+constexpr float kPanSpeed = 0.01f;
+constexpr float kZoomSpeed = 0.01f;
+constexpr float kDefaultFOV = 45.0f;
+} // namespace
 
-    m_near = 0.1f;  // arbitrary for now...
-    m_far = 100.0f; // arbitrary for now...
-
-    m_position = glm::vec3(0.0f, 0.0f, -3.0f);
-    m_target = glm::vec3(0.0f, 0.0f, 0.0f);
-
-    m_forward = glm::vec3(0.0f, 0.0f, 1.0f);
-    m_right = glm::vec3(1.0f, 0.0f, 0.0f);
-    m_up = glm::vec3(0.0f, 1.0f, 0.0f);
-    m_baseUp = glm::vec3(0.0f, 1.0f, 0.0f);
-}
-
-void Camera::setWidthAndHeight(int width, int height)
+void Camera::Tumble(int dx, int dy)
 {
-    m_width = width;
-    m_height = height;
-}
-
-void Camera::tumble(int dx, int dy)
-{
-    // rotate around world y-axis (up-axis)
+    // Rotate around world Y-axis (up-axis)
     {
-        glm::vec3 tmp = m_position - m_target;
-        float degrees = float(dx) * 0.004f;
+        // Calculate the offset from the camera to the target
+        glm::vec3 cameraOffset = m_position - m_target;
 
-        float old_x = tmp[0];
-        float old_y = tmp[1];
-        float old_z = tmp[2];
+        // Rotate the camera offset around the world Y-axis
+        float degrees = float(dx) * kTumbleSpeed;
+        float newX = cameraOffset[0] * cos(degrees) - cameraOffset[2] * sin(degrees);
+        float newZ = cameraOffset[0] * sin(degrees) + cameraOffset[2] * cos(degrees);
 
-        float new_x = old_x * cos(degrees) - old_z * sin(degrees);
-        float new_z = old_x * sin(degrees) + old_z * cos(degrees);
+        // Update the camera position and orientation
+        cameraOffset[0] = newX;
+        cameraOffset[2] = newZ;
+        m_position = m_target + cameraOffset;
 
-        tmp[0] = new_x;
-        tmp[1] = old_y;
-        tmp[2] = new_z;
-
-        m_position = m_target + tmp;
-        m_forward = m_target - m_position;
-        m_forward = glm::normalize(m_forward);
-        m_right = glm::cross(m_forward, m_baseUp);
-        m_up = glm::cross(m_right, m_forward);
-        m_up = glm::normalize(m_up);
-        m_right = glm::cross(m_forward, m_up);
-        m_right = glm::normalize(m_right);
+        // Recalculate the camera's basis vectors
+        UpdateCameraVectors();
     }
 
-    // tilt around local x-axis (right-axis)
+    // Tilt around local X-axis (right-axis)
     {
-        glm::vec3 orig_pos = m_position;
-        glm::vec3 orig_forward = m_forward;
+        glm::vec3 originalPosition = m_position;
+        glm::vec3 originalForward = m_forward;
 
-        glm::vec3 tmp = m_position - m_target;
-        float degrees = float(dy) * 0.004f;
+        // Calculate the offset from the camera to the target
+        glm::vec3 cameraOffset = m_position - m_target;
+        float degrees = float(dy) * kTumbleSpeed;
 
-        float old_x = glm::dot(tmp, m_right);
-        float old_y = glm::dot(tmp, m_up);
-        float old_z = glm::dot(tmp, m_forward);
+        // Decompose the offset into the camera's local axes
+        float rightComponent = glm::dot(cameraOffset, m_right);
+        float upComponent = glm::dot(cameraOffset, m_up);
+        float forwardComponent = glm::dot(cameraOffset, m_forward);
 
-        float new_y = old_y * cos(degrees) - old_z * sin(degrees);
-        float new_z = old_y * sin(degrees) + old_z * cos(degrees);
+        // Rotate the offset around the local X-axis (right-axis)
+        float newUp = upComponent * cos(degrees) - forwardComponent * sin(degrees);
+        float newForward = upComponent * sin(degrees) + forwardComponent * cos(degrees);
 
-        tmp = (m_up * new_y) + (m_right * old_x) + (m_forward * new_z);
+        // Reconstruct the new camera position
+        cameraOffset = (m_right * rightComponent) + (m_up * newUp) + (m_forward * newForward);
+        m_position = m_target + cameraOffset;
 
-        m_position = m_target + tmp;
-        m_forward = m_target - m_position;
-        m_forward = glm::normalize(m_forward);
-
-        // clamp forward vector
-        static const float maxVerticalComponent = 0.9995f;
-        if (m_forward[1] > maxVerticalComponent)
+        // Clamp the forward vector to prevent gimbal lock
+        m_forward = glm::normalize(m_target - m_position);
+        if (std::abs(m_forward[1]) > kTiltClamp)
         {
-            m_forward = orig_forward;
-            m_position = orig_pos;
-        }
-        if (m_forward[1] < -maxVerticalComponent)
-        {
-            m_forward = orig_forward;
-            m_position = orig_pos;
+            m_position = originalPosition;
+            m_forward = originalForward;
         }
 
-        m_up = glm::cross(m_right, m_forward);
-        m_up = glm::normalize(m_up);
-        m_right = glm::cross(m_forward, m_baseUp);
-        m_right = glm::normalize(m_right);
-
-        m_up = glm::cross(m_right, m_forward);
-        m_up = glm::normalize(m_up);
+        // Recalculate the camera's basis vectors
+        UpdateCameraVectors();
     }
 }
 
-void Camera::zoom(int dx, int dy)
+void Camera::Zoom(int dx, int dy)
 {
-    float sizeFactor = 1.0f;
-    const float speed = 0.01f;
-    // float distanceToFocus = length(m_position - m_target);
-    float delta = (-dx + dy) * (speed * sizeFactor);
+    const float delta = (-dx + dy) * kZoomSpeed;
 
-    // Move the camera
+    // Move the camera along the forward vector
     m_position += m_forward * delta;
-    // m_target += m_forward * delta;
-
-    // Scale size factor by the same factor we just scaled distance to focus
-    // sizeFactor *= 1.0f - (delta / distanceToFocus);
 }
 
-void Camera::pan(int dx, int dy)
+void Camera::Pan(int dx, int dy)
 {
-    float sizeFactor = 1.0f;
-    const float speed = 0.01f;
+    const float delta_x = -dx * kPanSpeed;
+    const float delta_y = dy * kPanSpeed;
 
-    m_position += m_up * (dy * (speed * sizeFactor));
-    m_target += m_up * (dy * (speed * sizeFactor));
-
-    m_position += m_right * (-dx * (speed * sizeFactor));
-    m_target += m_right * (-dx * (speed * sizeFactor));
+    // Move the camera along the right and up vectors
+    m_position += m_up * delta_y + m_right * delta_x;
+    m_target += m_up * delta_y + m_right * delta_x;
 }
 
-glm::mat4 Camera::getViewMatrix() const
+void Camera::ResizeViewport(int width, int height)
+{
+    if (width > 0 && height > 0)
+    {
+        m_width = width;
+        m_height = height;
+    }
+}
+
+glm::mat4 Camera::GetViewMatrix() const noexcept
 {
     return glm::lookAt(m_position, m_target, m_up);
 }
 
-glm::mat4 Camera::getProjectionMatrix() const
+glm::mat4 Camera::GetProjectionMatrix() const noexcept
 {
-    const float ratio = static_cast<float>(m_width) / static_cast<float>(m_height);
-    return glm::perspective(glm::radians(45.0f), ratio, m_near, m_far);
+    const float ratio = static_cast<float>(m_width) / m_height;
+    return glm::perspective(glm::radians(kDefaultFOV), ratio, m_near, m_far);
 }
 
-glm::vec3 Camera::getWorldPosition() const
+glm::vec3 Camera::GetWorldPosition() const noexcept
 {
     return m_position;
+}
+
+void Camera::UpdateCameraVectors()
+{
+    m_forward = glm::normalize(m_target - m_position);
+    m_right = glm::normalize(glm::cross(m_forward, m_baseUp));
+    m_up = glm::normalize(glm::cross(m_right, m_forward));
 }

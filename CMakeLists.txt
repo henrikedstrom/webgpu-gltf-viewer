@@ -18,6 +18,7 @@ FetchContent_MakeAvailable(glm)
 add_executable(app
   src/main.cpp
   src/camera.cpp
+  src/orbit_controls.cpp
 )
 
 # Include directories for third-party libraries and project headers
