@@ -39,7 +39,7 @@ if(EMSCRIPTEN)
     -sUSE_GLFW=3 
     -sALLOW_MEMORY_GROWTH=1 
     -O3
-    --preload-file ${CMAKE_SOURCE_DIR}/assets@/assets
+    --preload-file ${CMAKE_SOURCE_DIR}/assets@/assets 
   )
 else()
   # Non-Emscripten settings
