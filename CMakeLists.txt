@@ -16,8 +16,9 @@ FetchContent_MakeAvailable(glm)
 
 # Add executable and source files
 add_executable(app
-  src/main.cpp
+  src/application.cpp
   src/camera.cpp
+  src/main.cpp
   src/orbit_controls.cpp
 )
 
