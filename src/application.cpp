@@ -69,31 +69,43 @@ void Application::Run()
     m_controls = std::make_unique<OrbitControls>(m_window, &m_camera);
     glfwSetKeyCallback(m_window, KeyCallback);
 
-    m_renderer.Initialize(m_window, &m_camera, m_width, m_height, [this]() { MainLoop(); });
+    m_model.LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
+
+    m_renderer.Initialize(m_window, &m_camera, &m_model, m_width, m_height, [this]() { MainLoop(); });
 }
 
 void Application::MainLoop()
 {
 #if defined(__EMSCRIPTEN__)
-    emscripten_set_main_loop_arg([](void *arg) { static_cast<Application *>(arg)->m_renderer.RenderFrame(); }, this, 0,
-                                 false);
+    // Pass a pointer to ProcessFrame via the Emscripten main loop
+    emscripten_set_main_loop_arg([](void *arg) { static_cast<Application *>(arg)->ProcessFrame(); }, this, 0, false);
 #else
     while (!glfwWindowShouldClose(m_window) && !m_quitApp)
     {
         glfwPollEvents();
-        m_renderer.RenderFrame();
+
+        ProcessFrame();
     }
 #endif
 }
 
+void Application::ProcessFrame()
+{
+    // Perform animation updates
+    if (m_animateModel)
+    {
+        m_model.AnimateModel(0.01f);
+    }
+
+    // Render a frame
+    m_renderer.Render();
+}
+
 void Application::OnKeyPressed(int key)
 {
-    static bool isAnimating = true;
-
     if (key == GLFW_KEY_A)
     {
-        isAnimating = !isAnimating; // Toggle the animation state
-        m_renderer.SetAnimating(isAnimating);
+        m_animateModel = !m_animateModel;
     }
     else if (key == GLFW_KEY_ESCAPE)
     {

@@ -25,16 +25,17 @@ class Camera
     /// Defaulted move assignment operator.
     Camera &operator=(Camera &&) = default;
 
+    // Camera movement
     void Tumble(int dx, int dy);
     void Zoom(int dx, int dy);
     void Pan(int dx, int dy);
 
+    // Resize the camera viewport
     void ResizeViewport(int width, int height);
 
+    // Accessors
     glm::mat4 GetViewMatrix() const noexcept;
-
     glm::mat4 GetProjectionMatrix() const noexcept;
-
     glm::vec3 GetWorldPosition() const noexcept;
 
   private:
