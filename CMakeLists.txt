@@ -20,6 +20,7 @@ add_executable(app
   src/camera.cpp
   src/main.cpp
   src/orbit_controls.cpp
+  src/renderer.cpp
 )
 
 # Include directories for third-party libraries and project headers
