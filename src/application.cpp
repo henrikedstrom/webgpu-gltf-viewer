@@ -34,7 +34,6 @@
 #include "camera.h"
 #include "orbit_controls.h"
 
-
 wgpu::Instance instance;
 wgpu::Adapter adapter;
 wgpu::Device device;
@@ -48,6 +47,7 @@ wgpu::TextureFormat format;
 wgpu::Texture depthTexture;
 wgpu::TextureView depthTextureView;
 
+GLFWwindow *window = nullptr;
 Camera camera;
 std::unique_ptr<OrbitControls> controls;
 float rotationAngle = 0.0f;
@@ -416,7 +416,6 @@ void UpdateUniforms()
 
 void Render()
 {
-
     // Update the rotation angle only if animation is active
     if (isAnimating)
     {
@@ -472,59 +471,6 @@ void InitGraphics(uint32_t width, uint32_t height)
     CreateRenderPipeline();
 }
 
-void Start(uint32_t width, uint32_t height)
-{
-    if (!glfwInit())
-    {
-        return;
-    }
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    GLFWwindow *window = glfwCreateWindow(width, height, "WebGPU window", nullptr, nullptr);
-
-    // Setup mouse and keyboard input callbacks
-    controls = std::make_unique<OrbitControls>(window, &camera);
-    glfwSetKeyCallback(window, KeyCallback);
-
-#if defined(__EMSCRIPTEN__)
-    wgpu::SurfaceDescriptorFromCanvasHTMLSelector canvasDesc{};
-    canvasDesc.selector = "#canvas";
-
-    wgpu::SurfaceDescriptor surfaceDesc{.nextInChain = &canvasDesc};
-    surface = instance.CreateSurface(&surfaceDesc);
-#else
-    surface = wgpu::glfw::CreateSurfaceForWindow(instance, window);
-#endif
-
-    camera.ResizeViewport(width, height);
-
-    LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
-    InitGraphics(width, height);
-
-    float lastFrameTime = 0.0f;
-
-#if defined(__EMSCRIPTEN__)
-    emscripten_set_main_loop(Render, 0, false);
-#else
-    while (!glfwWindowShouldClose(window) && !quitApp)
-    {
-        float currentFrameTime = glfwGetTime();
-        float deltaTime = currentFrameTime - lastFrameTime;
-        lastFrameTime = currentFrameTime;
-
-        glfwPollEvents();
-
-        Render();
-        surface.Present();
-        instance.ProcessEvents();
-    }
-
-    // Cleanup (native only)
-    glfwDestroyWindow(window);
-    glfwTerminate();
-#endif
-}
-
 void GetAdapter(const std::function<void(wgpu::Adapter)> &callback)
 {
     instance.RequestAdapter(
@@ -569,18 +515,74 @@ void GetDevice(const std::function<void(wgpu::Device)> &callback)
         new std::function<void(wgpu::Device)>(callback));
 }
 
+void InitRenderer(uint32_t width, uint32_t height, const std::function<void()> &callback)
+{
+    instance = wgpu::CreateInstance();
+    GetAdapter([width, height, callback](wgpu::Adapter a) {
+        adapter = a;
+        GetDevice([width, height, callback](wgpu::Device d) {
+            device = d;
+
+#if defined(__EMSCRIPTEN__)
+            wgpu::SurfaceDescriptorFromCanvasHTMLSelector canvasDesc{};
+            canvasDesc.selector = "#canvas";
+
+            wgpu::SurfaceDescriptor surfaceDesc{.nextInChain = &canvasDesc};
+            surface = instance.CreateSurface(&surfaceDesc);
+#else
+            surface = wgpu::glfw::CreateSurfaceForWindow(instance, window);
+#endif
+
+            InitGraphics(width, height);
+
+            // Invoke the callback (MainLoop)
+            callback();
+        });
+    });
+}
+
 Application::Application(uint32_t width, uint32_t height) : m_width(width), m_height(height)
 {
 }
 
 void Application::Run()
 {
-    instance = wgpu::CreateInstance();
-    GetAdapter([this](wgpu::Adapter a) {
-        adapter = a;
-        GetDevice([this](wgpu::Device d) {
-            device = d;
-            Start(m_width, m_height);
-        });
-    });
+    if (!glfwInit())
+    {
+        return;
+    }
+
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    window = glfwCreateWindow(m_width, m_height, "WebGPU window", nullptr, nullptr);
+
+    // Setup mouse and keyboard input callbacks
+    controls = std::make_unique<OrbitControls>(window, &camera);
+    glfwSetKeyCallback(window, KeyCallback);
+
+    camera.ResizeViewport(m_width, m_height);
+
+    LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
+
+    // Initialize the renderer and enter the main loop
+    InitRenderer(m_width, m_height, [this]() { this->MainLoop(); });
+}
+
+void Application::MainLoop()
+{
+#if defined(__EMSCRIPTEN__)
+    emscripten_set_main_loop(Render, 0, false);
+#else
+    while (!glfwWindowShouldClose(window) && !quitApp)
+    {
+        glfwPollEvents();
+
+        Render();
+        surface.Present();
+        instance.ProcessEvents();
+    }
+
+    // Cleanup (native only)
+    glfwDestroyWindow(window);
+    glfwTerminate();
+#endif
 }
