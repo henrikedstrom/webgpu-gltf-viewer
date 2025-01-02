@@ -359,7 +359,7 @@ void Renderer::Render() const
     pass.SetBindGroup(0, bindGroup);
     pass.SetVertexBuffer(0, vertexBuffer);
     pass.SetIndexBuffer(indexBuffer, wgpu::IndexFormat::Uint32);
-    pass.DrawIndexed(m_model->GetIndices().size());
+    pass.DrawIndexed(static_cast<uint32_t>(m_model->GetIndices().size()));
     pass.End();
     wgpu::CommandBuffer commands = encoder.Finish();
     device.GetQueue().Submit(1, &commands);

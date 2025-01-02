@@ -5,7 +5,7 @@
 
 // Forward Declarations
 class Camera;
-class GLFWwindow;
+struct GLFWwindow;
 
 // OrbitControls Class
 class OrbitControls

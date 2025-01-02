@@ -11,7 +11,7 @@
 #include "renderer.h"
 
 // Forward Declarations
-class GLFWwindow;
+struct GLFWwindow;
 
 // Application Class
 class Application

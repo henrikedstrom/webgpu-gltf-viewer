@@ -17,10 +17,13 @@
 #include "model.h"
 
 //----------------------------------------------------------------------
-// Internal Utility Functions
+// Internal Constants and Utility Functions
 
 namespace
 {
+
+// Constants
+constexpr float PI = 3.14159265358979323846f;
 
 void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::vector<float> &vertices,
                  std::vector<uint32_t> &indices)
@@ -147,7 +150,7 @@ void Model::LoadModel(const std::string &filename)
         }
 
         // Rotation to correct orientation (90 degrees in radians for X-axis)
-        float xAxisAngle = M_PI / 2.0f; // 90 degrees
+        float xAxisAngle = PI / 2.0f; // 90 degrees
         m_transform = glm::rotate(glm::mat4(1.0f), xAxisAngle, glm::vec3(1.0f, 0.0f, 0.0f));
     }
     else
@@ -159,13 +162,13 @@ void Model::LoadModel(const std::string &filename)
 void Model::AnimateModel(float deltaTime)
 {
     m_rotationAngle += deltaTime; // Increment the rotation angle
-    if (m_rotationAngle > 2.0f * M_PI)
+    if (m_rotationAngle > 2.0f * PI)
     {
-        m_rotationAngle -= 2.0f * M_PI; // Keep the angle within [0, 2π]
+        m_rotationAngle -= 2.0f * PI; // Keep the angle within [0, 2π]
     }
 
     // Rotation to correct orientation (90 degrees in radians for X-axis)
-    float xAxisAngle = M_PI / 2.0f; // 90 degrees
+    float xAxisAngle = PI / 2.0f; // 90 degrees
     glm::mat4 xRotationMatrix = glm::rotate(glm::mat4(1.0f), xAxisAngle, glm::vec3(1.0f, 0.0f, 0.0f));
 
     // Create the Y-axis rotation matrix (dynamic rotation angle)
