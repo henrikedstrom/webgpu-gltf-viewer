@@ -1,21 +1,24 @@
 #pragma once
 
+// Standard Library Headers
 #include <cstdint>
 #include <memory>
 
+// Project Headers
 #include "camera.h"
 #include "model.h"
 #include "orbit_controls.h"
 #include "renderer.h"
 
+// Forward Declarations
 class GLFWwindow;
 
+// Application Class
 class Application
 {
   public:
-
     // Static Instance Getter
-    static Application *GetInstance() { return s_instance; }
+    static Application *GetInstance();
 
     // Constructor and Destructor
     explicit Application(uint32_t width, uint32_t height);
@@ -32,7 +35,6 @@ class Application
     void OnKeyPressed(int key);
 
   private:
-
     // Private Member Functions
     void MainLoop();
     void ProcessFrame();
@@ -40,6 +42,7 @@ class Application
     // Static Instance
     static Application *s_instance;
 
+    // Private Member Variables
     uint32_t m_width;
     uint32_t m_height;
     bool m_quitApp = false;

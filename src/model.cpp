@@ -1,5 +1,7 @@
+// Standard Library Headers
 #include <iostream>
 
+// Third-Party Library Headers
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_RIGHT_HANDED
 #include <glm/ext.hpp>
@@ -11,10 +13,14 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
 
+// Project Headers
 #include "model.h"
 
 //----------------------------------------------------------------------
-// Model loading
+// Internal Utility Functions
+
+namespace
+{
 
 void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::vector<float> &vertices,
                  std::vector<uint32_t> &indices)
@@ -113,6 +119,11 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         }
     }
 }
+
+} // namespace
+
+//----------------------------------------------------------------------
+// Model Class Implementation
 
 void Model::LoadModel(const std::string &filename)
 {

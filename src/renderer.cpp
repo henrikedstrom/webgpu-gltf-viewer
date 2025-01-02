@@ -24,12 +24,18 @@
 #include <webgpu/webgpu_glfw.h>
 #endif
 
-// Project-Specific Headers
+// Project Headers
 #include "application.h"
 #include "camera.h"
 #include "model.h"
 #include "orbit_controls.h"
 #include "renderer.h"
+
+//----------------------------------------------------------------------
+// Internal Utility Functions and Variables - [TODO] All to be refactored
+
+namespace
+{
 
 wgpu::Instance instance;
 wgpu::Adapter adapter;
@@ -283,6 +289,11 @@ void GetDevice(const std::function<void(wgpu::Device)> &callback)
         },
         new std::function<void(wgpu::Device)>(callback));
 }
+
+} // namespace
+
+//----------------------------------------------------------------------
+// Renderer Class implementation
 
 void Renderer::Initialize(GLFWwindow *window, Camera *camera, Model *model, uint32_t width, uint32_t height,
                           const std::function<void()> &callback)

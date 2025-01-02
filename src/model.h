@@ -1,11 +1,14 @@
 #pragma once
 
+// Standard Library Headers
 #include <cstdint>
 #include <string>
 #include <vector>
 
+// Third-Party Library Headers
 #include <glm/glm.hpp>
 
+// Model Class
 class Model
 {
   public:
@@ -28,7 +31,8 @@ class Model
     const std::vector<uint32_t> &GetIndices() const noexcept;
 
   private:
-    glm::mat4 m_transform{1.0f}; // Model transformation matrix
+    // Private Member Variables
+    glm::mat4 m_transform{1.0f};  // Model transformation matrix
     float m_rotationAngle = 0.0f; // Model rotation angle
     std::vector<float> m_vertices;
     std::vector<uint32_t> m_indices;

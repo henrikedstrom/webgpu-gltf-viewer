@@ -5,12 +5,17 @@
 #include <emscripten/emscripten.h>
 #endif
 
+// Project Headers
 #include "application.h"
 
+// Static Application Instance
 Application *Application::s_instance = nullptr;
 
 //----------------------------------------------------------------------
-// Input Callbacks
+// Internal Utility Functions
+
+namespace
+{
 
 void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
@@ -35,6 +40,16 @@ void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
             Application::GetInstance()->OnKeyPressed(key);
         }
     }
+}
+
+} // namespace
+
+//----------------------------------------------------------------------
+// Application Class Implementation
+
+Application *Application::GetInstance()
+{
+    return s_instance;
 }
 
 Application::Application(uint32_t width, uint32_t height) : m_width(width), m_height(height)

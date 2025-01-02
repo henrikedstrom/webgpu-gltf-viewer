@@ -1,6 +1,12 @@
-#include "orbit_controls.h"
-#include "camera.h"
+// Third-Party Library Headers
 #include <GLFW/glfw3.h>
+
+// Project Headers
+#include "camera.h"
+#include "orbit_controls.h"
+
+//----------------------------------------------------------------------
+// OrbitControls Class Implementation
 
 OrbitControls::OrbitControls(GLFWwindow *window, Camera *camera) : m_window(window), m_camera(camera)
 {

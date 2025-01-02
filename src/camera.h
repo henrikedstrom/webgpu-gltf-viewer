@@ -1,36 +1,28 @@
 #pragma once
 
+// Third-Party Library Headers
 #include <glm/glm.hpp>
 
+// Camera Class
 class Camera
 {
   public:
-    /// Constructs a camera with default parameters.
+    // Constructors
     Camera() = default;
-
-    /// Constructs a camera with the specified viewport dimensions.
     Camera(int width, int height) : m_width(width), m_height(height)
     {
     }
 
-    /// Defaulted copy constructor.
+    // Rule of 5
     Camera(const Camera &) = default;
-
-    /// Defaulted copy assignment operator.
     Camera &operator=(const Camera &) = default;
-
-    /// Defaulted move constructor.
     Camera(Camera &&) = default;
-
-    /// Defaulted move assignment operator.
     Camera &operator=(Camera &&) = default;
 
-    // Camera movement
+    // Public Interface
     void Tumble(int dx, int dy);
     void Zoom(int dx, int dy);
     void Pan(int dx, int dy);
-
-    // Resize the camera viewport
     void ResizeViewport(int width, int height);
 
     // Accessors
@@ -39,6 +31,9 @@ class Camera
     glm::vec3 GetWorldPosition() const noexcept;
 
   private:
+    // Updates the camera's basis vectors (forward, right, and up)
+    void UpdateCameraVectors();
+
     // Screen dimensions
     int m_width{800};  // Default screen width
     int m_height{600}; // Default screen height
@@ -56,7 +51,4 @@ class Camera
     glm::vec3 m_right{1.0f, 0.0f, 0.0f};   // Right vector
     glm::vec3 m_up{0.0f, 1.0f, 0.0f};      // Up vector
     glm::vec3 m_baseUp{0.0f, 1.0f, 0.0f};  // Base up vector
-
-    /// Updates the camera's basis vectors (forward, right, and up)
-    void UpdateCameraVectors();
 };

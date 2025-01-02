@@ -1,6 +1,11 @@
+// Third-Party Library Headers
+#include <glm/gtc/matrix_transform.hpp>
+
+// Project Headersq
 #include "camera.h"
 
-#include <glm/gtc/matrix_transform.hpp>
+//----------------------------------------------------------------------
+// Internal Constants
 
 namespace
 {
@@ -10,6 +15,9 @@ constexpr float kPanSpeed = 0.01f;
 constexpr float kZoomSpeed = 0.01f;
 constexpr float kDefaultFOV = 45.0f;
 } // namespace
+
+//----------------------------------------------------------------------
+// Camera Class Implementation
 
 void Camera::Tumble(int dx, int dy)
 {
