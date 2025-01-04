@@ -1,38 +1,66 @@
-
-
 struct Uniforms {
     viewMatrix: mat4x4<f32>,
     projectionMatrix: mat4x4<f32>,
-    modelMatrix: mat4x4<f32>
+    modelMatrix: mat4x4<f32>,
+    normalMatrix: mat4x4<f32>
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) fragColor: vec3<f32>
+    @builtin(position) position: vec4<f32>,  // Clip-space position
+    @location(0) fragColor: vec4<f32>,       // Vertex color
+    @location(1) fragTexCoord0: vec2<f32>,   // Texture coordinate 0
+    @location(2) fragTexCoord1: vec2<f32>,   // Texture coordinate 1
+    @location(3) fragNormalWorld: vec3<f32>  // Normal vector (in World Space)
 };
 
 @vertex
 fn vertexMain(
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) color: vec3<f32>
+    @location(2) tangent: vec4<f32>,
+    @location(3) texCoord0: vec2<f32>,
+    @location(4) texCoord1: vec2<f32>,
+    @location(5) color: vec4<f32>
 ) -> VertexOutput {
-    // Apply model, view, and projection transformations
+    // Transform the position to world space
     let worldPosition = uniforms.modelMatrix * vec4<f32>(position, 1.0);
-    let viewPosition = uniforms.viewMatrix * worldPosition;
-    let clipPosition = uniforms.projectionMatrix * viewPosition;
+
+    // Transform the normal to world space using the normal matrix (3x3 inverse transpose)
+    let worldNormal = (uniforms.normalMatrix * vec4f(normal, 0.0)).xyz;
 
     var output: VertexOutput;
-    output.position = clipPosition;
-    output.fragColor = normal * 0.5 + 0.5; // Convert normal to color
+    output.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPosition;
+    output.fragColor = color;
+    output.fragTexCoord0 = texCoord0;
+    output.fragTexCoord1 = texCoord1;
+    output.fragNormalWorld = worldNormal; // Pass the world-space normal to the fragment shader
     return output;
 }
 
 @fragment
 fn fragmentMain(
-    @location(0) fragColor: vec3<f32>  // Input: interpolated color from the vertex shader
+    @location(0) fragColor: vec4<f32>,      // Interpolated vertex color
+    @location(1) fragTexCoord0: vec2<f32>,  // Interpolated texture coordinate 0
+    @location(2) fragTexCoord1: vec2<f32>,  // Interpolated texture coordinate 1
+    @location(3) fragNormalWorld: vec3<f32> // Interpolated normal vector
 ) -> @location(0) vec4<f32> {
-    return vec4<f32>(fragColor, 1.0); // Output the color with full opacity
+    // Define a global light direction in world space
+    let globalLightDirWorld: vec3<f32> = normalize(vec3<f32>(1.0, 1.0, -1.0));
+
+    // Define light color
+    let lightColor: vec3<f32> = vec3<f32>(1.0, 0.9, 0.7); // Slight yellow tint
+
+    // Normalize the interpolated normal vector
+    let normalizedNormal = normalize(fragNormalWorld);
+
+    // Perform diffuse lighting calculation in world space
+    let diffuseLighting: f32 = max(dot(normalizedNormal, globalLightDirWorld), 0.0);
+
+    // Modulate the vertex color by the diffuse lighting and light color
+    var litColor: vec3<f32> = fragColor.rgb * diffuseLighting * lightColor;
+
+    // Final output
+    return vec4<f32>(litColor, fragColor.a);
 }

@@ -112,6 +112,14 @@ void Renderer::Render()
 #endif
 }
 
+void Renderer::ReloadShaders()
+{
+    m_pipeline = nullptr;
+    m_shaderModule = nullptr;
+
+    CreateRenderPipeline();
+}
+
 void Renderer::InitGraphics()
 {
     ConfigureSurface();
@@ -134,15 +142,15 @@ void Renderer::ConfigureSurface()
 
 void Renderer::CreateVertexBuffer()
 {
-    const std::vector<float> vertexData = m_model->GetVertices();
+    const std::vector<Model::Vertex> &vertexData = m_model->GetVertices();
 
     wgpu::BufferDescriptor vertexBufferDesc{};
-    vertexBufferDesc.size = vertexData.size() * sizeof(float);
+    vertexBufferDesc.size = vertexData.size() * sizeof(Model::Vertex);
     vertexBufferDesc.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
     vertexBufferDesc.mappedAtCreation = true;
 
     m_vertexBuffer = m_device.CreateBuffer(&vertexBufferDesc);
-    std::memcpy(m_vertexBuffer.GetMappedRange(), vertexData.data(), vertexData.size() * sizeof(float));
+    std::memcpy(m_vertexBuffer.GetMappedRange(), vertexData.data(), vertexData.size() * sizeof(Model::Vertex));
     m_vertexBuffer.Unmap();
 }
 
@@ -173,6 +181,8 @@ void Renderer::CreateUniformBuffer()
     uniforms.viewMatrix = glm::mat4(1.0f);       // Identity matrix
     uniforms.projectionMatrix = glm::mat4(1.0f); // Identity matrix
     uniforms.modelMatrix = glm::mat4(1.0f);      // Identity matrix
+    uniforms.normalMatrix = glm::mat3(1.0f);     // Identity matrix
+
 
     m_device.GetQueue().WriteBuffer(m_uniformBuffer, 0, &uniforms, sizeof(Uniforms));
 }
@@ -211,22 +221,28 @@ void Renderer::CreateRenderPipeline()
     wgslDesc.code = shader.c_str();
 
     wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgslDesc};
-    wgpu::ShaderModule shaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
+    m_shaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::VertexAttribute vertexAttributes[] = {
-        {.format = wgpu::VertexFormat::Float32x3, .offset = 0, .shaderLocation = 0},
-        {.format = wgpu::VertexFormat::Float32x3, .offset = 3 * sizeof(float), .shaderLocation = 1},
-        {.format = wgpu::VertexFormat::Float32x3, .offset = 6 * sizeof(float), .shaderLocation = 2}};
+        {.format = wgpu::VertexFormat::Float32x3, .offset = offsetof(Model::Vertex, m_position), .shaderLocation = 0},
+        {.format = wgpu::VertexFormat::Float32x3, .offset = offsetof(Model::Vertex, m_normal), .shaderLocation = 1},
+        {.format = wgpu::VertexFormat::Float32x4, .offset = offsetof(Model::Vertex, m_tangent), .shaderLocation = 2},
+        {.format = wgpu::VertexFormat::Float32x2, .offset = offsetof(Model::Vertex, m_texCoord0), .shaderLocation = 3},
+        {.format = wgpu::VertexFormat::Float32x2, .offset = offsetof(Model::Vertex, m_texCoord1), .shaderLocation = 4},
+        {.format = wgpu::VertexFormat::Float32x4, .offset = offsetof(Model::Vertex, m_color), .shaderLocation = 5},
+    };
 
-    wgpu::VertexBufferLayout vertexBufferLayout{.arrayStride = 9 * sizeof(float),
-                                                .stepMode = wgpu::VertexStepMode::Vertex,
-                                                .attributeCount = 3,
-                                                .attributes = vertexAttributes};
+    wgpu::VertexBufferLayout vertexBufferLayout{
+        .arrayStride = sizeof(Model::Vertex),
+        .stepMode = wgpu::VertexStepMode::Vertex,
+        .attributeCount = 6,
+        .attributes = vertexAttributes,
+    };
 
     wgpu::ColorTargetState colorTargetState{.format = m_surfaceFormat};
 
     wgpu::FragmentState fragmentState{
-        .module = shaderModule, .entryPoint = "fragmentMain", .targetCount = 1, .targets = &colorTargetState};
+        .module = m_shaderModule, .entryPoint = "fragmentMain", .targetCount = 1, .targets = &colorTargetState};
 
     wgpu::DepthStencilState depthStencilState{
         .format = wgpu::TextureFormat::Depth24PlusStencil8,
@@ -237,7 +253,7 @@ void Renderer::CreateRenderPipeline()
     // Step 1: Create an explicit bind group layout
     wgpu::BindGroupLayoutEntry bindGroupLayoutEntry{
         .binding = 0,
-        .visibility = wgpu::ShaderStage::Vertex,
+        .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
         .buffer = {.type = wgpu::BufferBindingType::Uniform,
                    .hasDynamicOffset = false,
                    .minBindingSize = sizeof(Uniforms)},
@@ -264,7 +280,7 @@ void Renderer::CreateRenderPipeline()
     wgpu::RenderPipelineDescriptor descriptor{.layout = pipelineLayout,
                                               .vertex =
                                                   {
-                                                      .module = shaderModule,
+                                                      .module = m_shaderModule,
                                                       .entryPoint = "vertexMain",
                                                       .bufferCount = 1,
                                                       .buffers = &vertexBufferLayout,
@@ -283,6 +299,16 @@ void Renderer::UpdateUniforms() const
     uniforms.projectionMatrix = m_camera->GetProjectionMatrix();
     uniforms.modelMatrix = m_model->GetTransform();
 
+    // Compute the normal matrix as a 3x3 matrix (inverse transpose of the model matrix)
+    glm::mat3 normalMatrix3x3 = glm::transpose(glm::inverse(glm::mat3(uniforms.modelMatrix)));
+
+    // Convert the normal matrix to a 4x4 matrix (upper-left 3x3 filled, rest is identity)
+    uniforms.normalMatrix = glm::mat4(1.0f); // Initialize as identity
+    uniforms.normalMatrix[0] = glm::vec4(normalMatrix3x3[0], 0.0f); // First row
+    uniforms.normalMatrix[1] = glm::vec4(normalMatrix3x3[1], 0.0f); // Second row
+    uniforms.normalMatrix[2] = glm::vec4(normalMatrix3x3[2], 0.0f); // Third row
+
+    // Upload the uniforms to the GPU
     m_device.GetQueue().WriteBuffer(m_uniformBuffer, 0, &uniforms, sizeof(Uniforms));
 }
 
@@ -382,6 +408,7 @@ void Renderer::GetDevice(const std::function<void(wgpu::Device)> &callback)
         {
             std::cerr << "No message provided." << std::endl;
         }
+        std::exit(EXIT_FAILURE); // Exit the application
     });
 #endif
 

@@ -106,11 +106,8 @@ void Application::MainLoop()
 
 void Application::ProcessFrame()
 {
-    // Perform animation updates
-    if (m_animateModel)
-    {
-        m_model.AnimateModel(0.01f);
-    }
+    // Animate the model (if enabled)
+    m_model.Update(0.01f, m_animateModel);
 
     // Render a frame
     m_renderer.Render();
@@ -125,5 +122,9 @@ void Application::OnKeyPressed(int key)
     else if (key == GLFW_KEY_ESCAPE)
     {
         m_quitApp = true;
+    }
+    else if (key == GLFW_KEY_R)
+    {
+        m_renderer.ReloadShaders();
     }
 }

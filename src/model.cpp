@@ -25,7 +25,7 @@ namespace
 // Constants
 constexpr float PI = 3.14159265358979323846f;
 
-void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::vector<float> &vertices,
+void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::vector<Model::Vertex> &vertices,
                  std::vector<uint32_t> &indices)
 {
     for (const auto &primitive : mesh.primitives)
@@ -49,6 +49,41 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
                                                          normalAccessor.byteOffset);
         }
 
+        // Optional: Access tangents
+        const auto tangentIter = primitive.attributes.find("TANGENT");
+        const float *tangentData = nullptr;
+        if (tangentIter != primitive.attributes.end())
+        {
+            const auto &tangentAccessor = model.accessors[tangentIter->second];
+            const auto &tangentBufferView = model.bufferViews[tangentAccessor.bufferView];
+            const auto &tangentBuffer = model.buffers[tangentBufferView.buffer];
+            tangentData = reinterpret_cast<const float *>(tangentBuffer.data.data() + tangentBufferView.byteOffset +
+                                                          tangentAccessor.byteOffset);
+        }
+
+        // Optional: Access texture coordinates
+        const auto texCoord0Iter = primitive.attributes.find("TEXCOORD_0");
+        const float *texCoord0Data = nullptr;
+        if (texCoord0Iter != primitive.attributes.end())
+        {
+            const auto &texCoordAccessor = model.accessors[texCoord0Iter->second];
+            const auto &texCoordBufferView = model.bufferViews[texCoordAccessor.bufferView];
+            const auto &texCoordBuffer = model.buffers[texCoordBufferView.buffer];
+            texCoord0Data = reinterpret_cast<const float *>(texCoordBuffer.data.data() + texCoordBufferView.byteOffset +
+                                                            texCoordAccessor.byteOffset);
+        }
+
+        const auto texCoord1Iter = primitive.attributes.find("TEXCOORD_1");
+        const float *texCoord1Data = nullptr;
+        if (texCoord1Iter != primitive.attributes.end())
+        {
+            const auto &texCoordAccessor = model.accessors[texCoord1Iter->second];
+            const auto &texCoordBufferView = model.bufferViews[texCoordAccessor.bufferView];
+            const auto &texCoordBuffer = model.buffers[texCoordBufferView.buffer];
+            texCoord1Data = reinterpret_cast<const float *>(texCoordBuffer.data.data() + texCoordBufferView.byteOffset +
+                                                            texCoordAccessor.byteOffset);
+        }
+
         // Optional: Access vertex colors
         const auto colorIter = primitive.attributes.find("COLOR_0");
         const float *colorData = nullptr;
@@ -61,41 +96,66 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
                                                         colorAccessor.byteOffset);
         }
 
-        // Copy vertex data (positions, normals, colors)
+        // Copy vertex data into Vertex struct
         for (size_t i = 0; i < positionAccessor.count; ++i)
         {
+            Model::Vertex vertex;
+
             // Position
-            vertices.push_back(positionData[i * 3 + 0]); // x
-            vertices.push_back(positionData[i * 3 + 1]); // y
-            vertices.push_back(positionData[i * 3 + 2]); // z
+            vertex.m_position = glm::vec3(positionData[i * 3 + 0], positionData[i * 3 + 1], positionData[i * 3 + 2]);
 
             // Normal (default to 0, 0, 1 if not provided)
             if (normalData)
             {
-                vertices.push_back(normalData[i * 3 + 0]); // nx
-                vertices.push_back(normalData[i * 3 + 1]); // ny
-                vertices.push_back(normalData[i * 3 + 2]); // nz
+                vertex.m_normal = glm::vec3(normalData[i * 3 + 0], normalData[i * 3 + 1], normalData[i * 3 + 2]);
             }
             else
             {
-                vertices.push_back(0.0f); // nx
-                vertices.push_back(0.0f); // ny
-                vertices.push_back(1.0f); // nz
+                vertex.m_normal = glm::vec3(0.0f, 0.0f, 1.0f);
+            }
+
+            // Tangent (default to 0, 0, 0, 1 if not provided)
+            if (tangentData)
+            {
+                vertex.m_tangent = glm::vec4(tangentData[i * 4 + 0], tangentData[i * 4 + 1], tangentData[i * 4 + 2],
+                                             tangentData[i * 4 + 3]);
+            }
+            else
+            {
+                vertex.m_tangent = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+            }
+
+            // Texture coordinates (default to 0, 0 if not provided)
+            if (texCoord0Data)
+            {
+                vertex.m_texCoord0 = glm::vec2(texCoord0Data[i * 2 + 0], texCoord0Data[i * 2 + 1]);
+            }
+            else
+            {
+                vertex.m_texCoord0 = glm::vec2(0.0f, 0.0f);
+            }
+
+            if (texCoord1Data)
+            {
+                vertex.m_texCoord1 = glm::vec2(texCoord1Data[i * 2 + 0], texCoord1Data[i * 2 + 1]);
+            }
+            else
+            {
+                vertex.m_texCoord1 = glm::vec2(0.0f, 0.0f);
             }
 
             // Color (default to white if not provided)
             if (colorData)
             {
-                vertices.push_back(colorData[i * 3 + 0]); // r
-                vertices.push_back(colorData[i * 3 + 1]); // g
-                vertices.push_back(colorData[i * 3 + 2]); // b
+                vertex.m_color =
+                    glm::vec4(colorData[i * 4 + 0], colorData[i * 4 + 1], colorData[i * 4 + 2], colorData[i * 4 + 3]);
             }
             else
             {
-                vertices.push_back(1.0f); // r
-                vertices.push_back(1.0f); // g
-                vertices.push_back(1.0f); // b
+                vertex.m_color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
             }
+
+            vertices.push_back(vertex);
         }
 
         // Access indices (if present)
@@ -159,12 +219,15 @@ void Model::LoadModel(const std::string &filename)
     }
 }
 
-void Model::AnimateModel(float deltaTime)
+void Model::Update(float deltaTime, bool animate)
 {
-    m_rotationAngle += deltaTime; // Increment the rotation angle
-    if (m_rotationAngle > 2.0f * PI)
+    if (animate)
     {
-        m_rotationAngle -= 2.0f * PI; // Keep the angle within [0, 2π]
+        m_rotationAngle += deltaTime; // Increment the rotation angle
+        if (m_rotationAngle > 2.0f * PI)
+        {
+            m_rotationAngle -= 2.0f * PI; // Keep the angle within [0, 2π]
+        }
     }
 
     // Rotation to correct orientation (90 degrees in radians for X-axis)
@@ -183,7 +246,7 @@ const glm::mat4 &Model::GetTransform() const noexcept
     return m_transform;
 }
 
-const std::vector<float> &Model::GetVertices() const noexcept
+const std::vector<Model::Vertex> &Model::GetVertices() const noexcept
 {
     return m_vertices;
 }
