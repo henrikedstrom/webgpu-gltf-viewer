@@ -314,42 +314,64 @@ void Renderer::GetAdapter(const std::function<void(wgpu::Adapter)> &callback)
 void Renderer::GetDevice(const std::function<void(wgpu::Device)> &callback)
 {
     wgpu::DeviceDescriptor deviceDesc;
+
+    // Helper function to log device lost reasons
+    auto logDeviceLostReason = [](auto reason, const char *message) {
+        std::cerr << "Device lost: ";
+        switch (reason)
+        {
+#if defined(__EMSCRIPTEN__)
+        case WGPUDeviceLostReason_Unknown:
+            std::cerr << "[Reason: Unknown]";
+            break;
+        case WGPUDeviceLostReason_Destroyed:
+            std::cerr << "[Reason: Destroyed]";
+            break;
+#else
+        // Dawn/native device lost reasons
+        case wgpu::DeviceLostReason::Unknown:
+            std::cerr << "[Reason: Unknown]";
+            break;
+        case wgpu::DeviceLostReason::Destroyed:
+            std::cerr << "[Reason: Destroyed]";
+            break;
+        case wgpu::DeviceLostReason::InstanceDropped:
+            std::cerr << "[Reason: Instance Dropped]";
+            break;
+        case wgpu::DeviceLostReason::FailedCreation:
+            std::cerr << "[Reason: Failed Creation]";
+            break;
+#endif
+        default:
+            std::cerr << "[Reason: Unrecognized]";
+            break;
+        }
+        if (message)
+        {
+            std::cerr << " - " << message << std::endl;
+        }
+        else
+        {
+            std::cerr << " - No message provided." << std::endl;
+        }
+    };
+
+#if defined(__EMSCRIPTEN__)
+    // Set device lost callback for Emscripten
+    deviceDesc.deviceLostCallback = [](WGPUDeviceLostReason reason, const char *message, void *userdata) {
+        auto logFn = static_cast<decltype(logDeviceLostReason) *>(userdata);
+        (*logFn)(reason, message); // Call the logging function
+    };
+    deviceDesc.deviceLostUserdata = &logDeviceLostReason; // Pass logDeviceLostReason as userdata
+#else
+    // Set device lost callback for Dawn/native
     deviceDesc.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
-        [](const wgpu::Device &device, wgpu::DeviceLostReason reason, const char *message) {
-            std::cerr << "Device lost: ";
-
-            // Print the reason
-            switch (reason)
-            {
-            case wgpu::DeviceLostReason::Unknown:
-                std::cerr << "[Reason: Unknown]";
-                break;
-            case wgpu::DeviceLostReason::Destroyed:
-                std::cerr << "[Reason: Destroyed]";
-                break;
-            case wgpu::DeviceLostReason::InstanceDropped:
-                std::cerr << "[Reason: Instance Dropped]";
-                break;
-            case wgpu::DeviceLostReason::FailedCreation:
-                std::cerr << "[Reason: Failed Creation]";
-                break;
-            default:
-                std::cerr << "[Reason: Unrecognized]";
-                break;
-            }
-
-            // Print the message
-            if (message)
-            {
-                std::cerr << " - " << message << std::endl;
-            }
-            else
-            {
-                std::cerr << " - No message provided." << std::endl;
-            }
+        [logDeviceLostReason](const wgpu::Device &device, wgpu::DeviceLostReason reason, const char *message) {
+            logDeviceLostReason(reason, message);
         });
 
+    // Set uncaptured error callback for Dawn/native
     deviceDesc.SetUncapturedErrorCallback([](const wgpu::Device &device, wgpu::ErrorType type, const char *message) {
         std::cerr << "Uncaptured error: ";
         if (message)
@@ -361,6 +383,7 @@ void Renderer::GetDevice(const std::function<void(wgpu::Device)> &callback)
             std::cerr << "No message provided." << std::endl;
         }
     });
+#endif
 
     m_adapter.RequestDevice(
         &deviceDesc,
