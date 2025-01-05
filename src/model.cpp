@@ -183,6 +183,38 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
     }
 }
 
+void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Material> &materials)
+{
+    Model::Material mat;
+    mat.m_baseColorFactor = glm::make_vec4(material.pbrMetallicRoughness.baseColorFactor.data());
+    mat.m_emissiveFactor = glm::make_vec4(material.emissiveFactor.data());
+    mat.m_metallicFactor = static_cast<float>(material.pbrMetallicRoughness.metallicFactor);
+    mat.m_roughnessFactor = static_cast<float>(material.pbrMetallicRoughness.roughnessFactor);
+
+    mat.m_baseColorTexture = material.pbrMetallicRoughness.baseColorTexture.index;
+    mat.m_metallicRoughnessTexture = material.pbrMetallicRoughness.metallicRoughnessTexture.index;
+    mat.m_normalTexture = material.normalTexture.index;
+    mat.m_emissiveTexture = material.emissiveTexture.index;
+    mat.m_occlusionTexture = material.occlusionTexture.index;
+
+    materials.push_back(mat);
+
+    // Print material properties (for debugging, remove later)
+    std::cout << "Material " << materials.size() - 1 << ":" << std::endl;
+    std::cout << "  Base Color Factor: " << mat.m_baseColorFactor.r << ", " << mat.m_baseColorFactor.g << ", "
+              << mat.m_baseColorFactor.b << ", " << mat.m_baseColorFactor.a << std::endl;
+    std::cout << "  Emissive Factor: " << mat.m_emissiveFactor.r << ", " << mat.m_emissiveFactor.g << ", "
+              << mat.m_emissiveFactor.b << ", " << mat.m_emissiveFactor.a << std::endl;
+    std::cout << "  Metallic Factor: " << mat.m_metallicFactor << std::endl;
+    std::cout << "  Roughness Factor: " << mat.m_roughnessFactor << std::endl;
+    std::cout << "  Base Color Texture: " << mat.m_baseColorTexture << std::endl;
+    std::cout << "  Metallic-Roughness Texture: " << mat.m_metallicRoughnessTexture << std::endl;
+    std::cout << "  Normal Texture: " << mat.m_normalTexture << std::endl;
+    std::cout << "  Emissive Texture: " << mat.m_emissiveTexture << std::endl;
+    std::cout << "  Occlusion Texture: " << mat.m_occlusionTexture << std::endl;
+    std::cout << "--------------------------------" << std::endl;
+}
+
 } // namespace
 
 //----------------------------------------------------------------------
@@ -194,6 +226,7 @@ void Model::LoadModel(const std::string &filename)
     m_rotationAngle = 0.0f;        // Reset the model rotation angle
     m_vertices.clear();            // Clear the vertex data
     m_indices.clear();             // Clear the index data
+    m_materials.clear();           // Clear the material data
 
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
@@ -207,6 +240,11 @@ void Model::LoadModel(const std::string &filename)
         for (const auto &mesh : model.meshes)
         {
             ProcessMesh(model, mesh, m_vertices, m_indices);
+        }
+
+        for (const auto &material : model.materials)
+        {
+            ProcessMaterial(material, m_materials);
         }
 
         // Rotation to correct orientation (90 degrees in radians for X-axis)
@@ -254,4 +292,9 @@ const std::vector<Model::Vertex> &Model::GetVertices() const noexcept
 const std::vector<uint32_t> &Model::GetIndices() const noexcept
 {
     return m_indices;
+}
+
+const std::vector<Model::Material> &Model::GetMaterials() const noexcept
+{
+    return m_materials;
 }
