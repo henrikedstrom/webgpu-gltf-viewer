@@ -215,6 +215,48 @@ void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Mate
     std::cout << "--------------------------------" << std::endl;
 }
 
+void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std::vector<Model::Texture> &textures)
+{
+
+    Model::Texture texture;
+    texture.m_name = image.name;
+    texture.m_width = image.width;
+    texture.m_height = image.height;
+    texture.m_components = image.component;
+    texture.m_mimeType = image.mimeType;
+
+    if (!image.image.empty())
+    {
+        // Image data is embedded
+        texture.m_data = image.image;
+    }
+    else if (!image.uri.empty())
+    {
+        // Image data is external, load it using stb_image
+        std::string imagePath = basePath + "/" + image.uri;
+        int width, height, components;
+        unsigned char *data = stbi_load(imagePath.c_str(), &width, &height, &components, 0);
+        if (data)
+        {
+            texture.m_width = width;
+            texture.m_height = height;
+            texture.m_components = components;
+            texture.m_data = std::vector<uint8_t>(data, data + (width * height * components));
+            stbi_image_free(data);
+        }
+        else
+        {
+            std::cerr << "Failed to load image: " << imagePath << std::endl;
+        }
+    }
+    else
+    {
+        std::cerr << "Warning: Texture " << texture.m_name << " has no valid image source." << std::endl;
+    }
+
+    textures.push_back(texture);
+}
+
 } // namespace
 
 //----------------------------------------------------------------------
@@ -227,6 +269,8 @@ void Model::LoadModel(const std::string &filename)
     m_vertices.clear();            // Clear the vertex data
     m_indices.clear();             // Clear the index data
     m_materials.clear();           // Clear the material data
+
+    const std::string basePath = filename.substr(0, filename.find_last_of("/"));
 
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
@@ -245,6 +289,11 @@ void Model::LoadModel(const std::string &filename)
         for (const auto &material : model.materials)
         {
             ProcessMaterial(material, m_materials);
+        }
+
+        for (const auto &image : model.images)
+        {
+            ProcessImage(image, basePath, m_textures);
         }
 
         // Rotation to correct orientation (90 degrees in radians for X-axis)
@@ -297,4 +346,9 @@ const std::vector<uint32_t> &Model::GetIndices() const noexcept
 const std::vector<Model::Material> &Model::GetMaterials() const noexcept
 {
     return m_materials;
+}
+
+const std::vector<Model::Texture> &Model::GetTextures() const noexcept
+{
+    return m_textures;
 }

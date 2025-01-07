@@ -36,6 +36,16 @@ class Model
         int m_occlusionTexture = -1;                   // Index of occlusion texture
     };
 
+    struct Texture
+    {
+        std::string m_name;          // Name of the texture
+        int m_width = 0;             // Width of the texture
+        int m_height = 0;            // Height of the texture
+        int m_components = 0;        // Components per pixel (e.g., 3 = RGB, 4 = RGBA)
+        std::vector<uint8_t> m_data; // Raw pixel data
+        std::string m_mimeType;      // MIME type (e.g., image/png)
+    };
+
     // Constructor
     Model() = default;
 
@@ -54,6 +64,7 @@ class Model
     const std::vector<Vertex> &GetVertices() const noexcept;
     const std::vector<uint32_t> &GetIndices() const noexcept;
     const std::vector<Material> &GetMaterials() const noexcept;
+    const std::vector<Texture> &GetTextures() const noexcept;
 
   private:
     // Private Member Variables
@@ -62,4 +73,5 @@ class Model
     std::vector<Vertex> m_vertices;
     std::vector<uint32_t> m_indices;
     std::vector<Material> m_materials;
+    std::vector<Texture> m_textures;
 };
