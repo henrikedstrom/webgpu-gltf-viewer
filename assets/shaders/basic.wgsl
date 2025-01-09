@@ -1,11 +1,15 @@
-struct Uniforms {
+struct GlobalUniforms {
     viewMatrix: mat4x4<f32>,
-    projectionMatrix: mat4x4<f32>,
+    projectionMatrix: mat4x4<f32>
+};
+
+struct ModelUniforms {
     modelMatrix: mat4x4<f32>,
     normalMatrix: mat4x4<f32>
 };
 
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
+@group(1) @binding(0) var<uniform> modelUniforms: ModelUniforms;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,  // Clip-space position
@@ -25,13 +29,13 @@ fn vertexMain(
     @location(5) color: vec4<f32>
 ) -> VertexOutput {
     // Transform the position to world space
-    let worldPosition = uniforms.modelMatrix * vec4<f32>(position, 1.0);
+    let worldPosition = modelUniforms.modelMatrix * vec4<f32>(position, 1.0);
 
     // Transform the normal to world space using the normal matrix (3x3 inverse transpose)
-    let worldNormal = (uniforms.normalMatrix * vec4f(normal, 0.0)).xyz;
+    let worldNormal = (modelUniforms.normalMatrix * vec4f(normal, 0.0)).xyz;
 
     var output: VertexOutput;
-    output.position = uniforms.projectionMatrix * uniforms.viewMatrix * worldPosition;
+    output.position = globalUniforms.projectionMatrix * globalUniforms.viewMatrix * worldPosition;
     output.fragColor = color;
     output.fragTexCoord0 = texCoord0;
     output.fragTexCoord1 = texCoord1;

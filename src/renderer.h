@@ -38,11 +38,12 @@ class Renderer
     // Private utility methods
     void InitGraphics();
     void ConfigureSurface();
+    void CreateDepthTexture();
     void CreateVertexBuffer();
     void CreateIndexBuffer();
-    void CreateUniformBuffer();
-    void CreateBindGroup(wgpu::BindGroupLayout bindGroupLayout);
-    void CreateDepthTexture();
+    void CreateUniformBuffers();
+    void CreateGlobalBindGroup();
+    void CreateModelBindGroup();
     void CreateRenderPipeline();
     void UpdateUniforms() const;
     void GetAdapter(const std::function<void(wgpu::Adapter)> &callback);
@@ -50,10 +51,14 @@ class Renderer
     std::string LoadShaderFile(const std::string &filepath) const;
 
     // Types
-    struct Uniforms
+    struct GlobalUniforms
     {
         glm::mat4 viewMatrix;
         glm::mat4 projectionMatrix;
+    };
+
+    struct ModelUniforms
+    {
         glm::mat4 modelMatrix;
         glm::mat4 normalMatrix;
     };
@@ -71,12 +76,20 @@ class Renderer
     wgpu::Device m_device;
     wgpu::Surface m_surface;
     wgpu::TextureFormat m_surfaceFormat;
+    wgpu::Texture m_depthTexture;
+    wgpu::TextureView m_depthTextureView;
+
+    // Global data
+    wgpu::Buffer m_globalUniformBuffer;
+    wgpu::BindGroupLayout m_globalBindGroupLayout;
+    wgpu::BindGroup m_globalBindGroup;
+
+    // Model related data. TODO: Move to separate class
     wgpu::ShaderModule m_shaderModule;
     wgpu::RenderPipeline m_pipeline;
     wgpu::Buffer m_vertexBuffer;
     wgpu::Buffer m_indexBuffer;
-    wgpu::Buffer m_uniformBuffer;
-    wgpu::BindGroup m_bindGroup;
-    wgpu::Texture m_depthTexture;
-    wgpu::TextureView m_depthTextureView;
+    wgpu::Buffer m_modelUniformBuffer;
+    wgpu::BindGroupLayout m_modelBindGroupLayout;
+    wgpu::BindGroup m_modelBindGroup;
 };

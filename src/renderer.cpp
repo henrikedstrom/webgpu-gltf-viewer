@@ -97,7 +97,8 @@ void Renderer::Render()
     wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
     wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderpass);
     pass.SetPipeline(m_pipeline);
-    pass.SetBindGroup(0, m_bindGroup);
+    pass.SetBindGroup(0, m_globalBindGroup);
+    pass.SetBindGroup(1, m_modelBindGroup);
     pass.SetVertexBuffer(0, m_vertexBuffer);
     pass.SetIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint32);
     pass.DrawIndexed(static_cast<uint32_t>(m_model->GetIndices().size()));
@@ -123,10 +124,11 @@ void Renderer::ReloadShaders()
 void Renderer::InitGraphics()
 {
     ConfigureSurface();
+    CreateDepthTexture();
+
     CreateVertexBuffer();
     CreateIndexBuffer();
-    CreateUniformBuffer();
-    CreateDepthTexture();
+    CreateUniformBuffers();
     CreateRenderPipeline();
 }
 
@@ -138,6 +140,17 @@ void Renderer::ConfigureSurface()
     wgpu::SurfaceConfiguration config{
         .device = m_device, .format = m_surfaceFormat, .width = m_width, .height = m_height};
     m_surface.Configure(&config);
+}
+
+void Renderer::CreateDepthTexture()
+{
+    wgpu::TextureDescriptor depthTextureDescriptor{};
+    depthTextureDescriptor.size = {m_width, m_height, 1};
+    depthTextureDescriptor.format = wgpu::TextureFormat::Depth24PlusStencil8;
+    depthTextureDescriptor.usage = wgpu::TextureUsage::RenderAttachment;
+
+    m_depthTexture = m_device.CreateTexture(&depthTextureDescriptor);
+    m_depthTextureView = m_depthTexture.CreateView();
 }
 
 void Renderer::CreateVertexBuffer()
@@ -168,50 +181,93 @@ void Renderer::CreateIndexBuffer()
     m_indexBuffer.Unmap();
 }
 
-void Renderer::CreateUniformBuffer()
+void Renderer::CreateUniformBuffers()
 {
     wgpu::BufferDescriptor bufferDescriptor{};
-    bufferDescriptor.size = sizeof(Uniforms);
+    bufferDescriptor.size = sizeof(GlobalUniforms);
     bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
 
-    m_uniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
+    m_globalUniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
 
-    // Initialize the uniforms with default values
-    Uniforms uniforms;
-    uniforms.viewMatrix = glm::mat4(1.0f);       // Identity matrix
-    uniforms.projectionMatrix = glm::mat4(1.0f); // Identity matrix
-    uniforms.modelMatrix = glm::mat4(1.0f);      // Identity matrix
-    uniforms.normalMatrix = glm::mat3(1.0f);     // Identity matrix
+    // Initialize Global Uniforms with default values
+    GlobalUniforms globalUniforms;
+    globalUniforms.viewMatrix = glm::mat4(1.0f);       // Initialize as identity
+    globalUniforms.projectionMatrix = glm::mat4(1.0f); // Initialize as identity
 
+    m_device.GetQueue().WriteBuffer(m_globalUniformBuffer, 0, &globalUniforms, sizeof(GlobalUniforms));
 
-    m_device.GetQueue().WriteBuffer(m_uniformBuffer, 0, &uniforms, sizeof(Uniforms));
+    // Create the model uniform buffer
+    bufferDescriptor.size = sizeof(ModelUniforms);
+    m_modelUniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
+
+    // Initialize Model Uniforms with default values
+    ModelUniforms modelUniforms;
+    modelUniforms.modelMatrix = glm::mat4(1.0f);  // Initialize as identity
+    modelUniforms.normalMatrix = glm::mat4(1.0f); // Initialize as identity
+
+    m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
 }
 
-void Renderer::CreateBindGroup(wgpu::BindGroupLayout bindGroupLayout)
+void Renderer::CreateGlobalBindGroup()
 {
+    wgpu::BindGroupLayoutEntry bindGroupLayoutEntry{
+        .binding = 0,
+        .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+        .buffer = {.type = wgpu::BufferBindingType::Uniform,
+                   .hasDynamicOffset = false,
+                   .minBindingSize = sizeof(GlobalUniforms)},
+    };
+
+    wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
+        .entryCount = 1,
+        .entries = &bindGroupLayoutEntry,
+    };
+
+    m_globalBindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+
     wgpu::BindGroupEntry bindGroupEntry{};
     bindGroupEntry.binding = 0;
-    bindGroupEntry.buffer = m_uniformBuffer;
+    bindGroupEntry.buffer = m_globalUniformBuffer;
     bindGroupEntry.offset = 0;
-    bindGroupEntry.size = sizeof(Uniforms);
+    bindGroupEntry.size = sizeof(GlobalUniforms);
 
     wgpu::BindGroupDescriptor bindGroupDescriptor{};
-    bindGroupDescriptor.layout = bindGroupLayout;
+    bindGroupDescriptor.layout = m_globalBindGroupLayout;
     bindGroupDescriptor.entryCount = 1;
     bindGroupDescriptor.entries = &bindGroupEntry;
 
-    m_bindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
+    m_globalBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
-void Renderer::CreateDepthTexture()
+void Renderer::CreateModelBindGroup()
 {
-    wgpu::TextureDescriptor depthTextureDescriptor{};
-    depthTextureDescriptor.size = {m_width, m_height, 1};
-    depthTextureDescriptor.format = wgpu::TextureFormat::Depth24PlusStencil8;
-    depthTextureDescriptor.usage = wgpu::TextureUsage::RenderAttachment;
+    wgpu::BindGroupLayoutEntry bindGroupLayoutEntry{
+        .binding = 0,
+        .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+        .buffer = {.type = wgpu::BufferBindingType::Uniform,
+                   .hasDynamicOffset = false,
+                   .minBindingSize = sizeof(ModelUniforms)},
+    };
 
-    m_depthTexture = m_device.CreateTexture(&depthTextureDescriptor);
-    m_depthTextureView = m_depthTexture.CreateView();
+    wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
+        .entryCount = 1,
+        .entries = &bindGroupLayoutEntry,
+    };
+
+    m_modelBindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+
+    wgpu::BindGroupEntry bindGroupEntry{};
+    bindGroupEntry.binding = 0;
+    bindGroupEntry.buffer = m_modelUniformBuffer;
+    bindGroupEntry.offset = 0;
+    bindGroupEntry.size = sizeof(ModelUniforms);
+
+    wgpu::BindGroupDescriptor bindGroupDescriptor{};
+    bindGroupDescriptor.layout = m_modelBindGroupLayout;
+    bindGroupDescriptor.entryCount = 1;
+    bindGroupDescriptor.entries = &bindGroupEntry;
+
+    m_modelBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
 void Renderer::CreateRenderPipeline()
@@ -250,29 +306,14 @@ void Renderer::CreateRenderPipeline()
         .depthCompare = wgpu::CompareFunction::Less,
     };
 
-    // Step 1: Create an explicit bind group layout
-    wgpu::BindGroupLayoutEntry bindGroupLayoutEntry{
-        .binding = 0,
-        .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
-        .buffer = {.type = wgpu::BufferBindingType::Uniform,
-                   .hasDynamicOffset = false,
-                   .minBindingSize = sizeof(Uniforms)},
-    };
+    CreateGlobalBindGroup();
+    CreateModelBindGroup();
 
-    wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
-        .entryCount = 1,
-        .entries = &bindGroupLayoutEntry,
-    };
+    wgpu::BindGroupLayout bindGroupLayouts[] = {m_globalBindGroupLayout, m_modelBindGroupLayout};
 
-    wgpu::BindGroupLayout bindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
-
-    // Step 2: Create the bind group
-    CreateBindGroup(bindGroupLayout);
-
-    // Step 3: Create the pipeline layout using the bind group layout
     wgpu::PipelineLayoutDescriptor layoutDescriptor{
-        .bindGroupLayoutCount = 1,
-        .bindGroupLayouts = &bindGroupLayout,
+        .bindGroupLayoutCount = 2,
+        .bindGroupLayouts = bindGroupLayouts,
     };
 
     wgpu::PipelineLayout pipelineLayout = m_device.CreatePipelineLayout(&layoutDescriptor);
@@ -294,22 +335,29 @@ void Renderer::CreateRenderPipeline()
 
 void Renderer::UpdateUniforms() const
 {
-    Uniforms uniforms;
-    uniforms.viewMatrix = m_camera->GetViewMatrix();
-    uniforms.projectionMatrix = m_camera->GetProjectionMatrix();
-    uniforms.modelMatrix = m_model->GetTransform();
-
-    // Compute the normal matrix as a 3x3 matrix (inverse transpose of the model matrix)
-    glm::mat3 normalMatrix3x3 = glm::transpose(glm::inverse(glm::mat3(uniforms.modelMatrix)));
-
-    // Convert the normal matrix to a 4x4 matrix (upper-left 3x3 filled, rest is identity)
-    uniforms.normalMatrix = glm::mat4(1.0f); // Initialize as identity
-    uniforms.normalMatrix[0] = glm::vec4(normalMatrix3x3[0], 0.0f); // First row
-    uniforms.normalMatrix[1] = glm::vec4(normalMatrix3x3[1], 0.0f); // Second row
-    uniforms.normalMatrix[2] = glm::vec4(normalMatrix3x3[2], 0.0f); // Third row
+    // Update the global uniforms
+    GlobalUniforms globalUniforms;
+    globalUniforms.viewMatrix = m_camera->GetViewMatrix();
+    globalUniforms.projectionMatrix = m_camera->GetProjectionMatrix();
 
     // Upload the uniforms to the GPU
-    m_device.GetQueue().WriteBuffer(m_uniformBuffer, 0, &uniforms, sizeof(Uniforms));
+    m_device.GetQueue().WriteBuffer(m_globalUniformBuffer, 0, &globalUniforms, sizeof(GlobalUniforms));
+
+    // Update the model uniforms
+    ModelUniforms modelUniforms;
+    modelUniforms.modelMatrix = m_model->GetTransform();
+
+    // Compute the normal matrix as a 3x3 matrix (inverse transpose of the model matrix)
+    glm::mat3 normalMatrix3x3 = glm::transpose(glm::inverse(glm::mat3(modelUniforms.modelMatrix)));
+
+    // Convert the normal matrix to a 4x4 matrix (upper-left 3x3 filled, rest is identity)
+    modelUniforms.normalMatrix = glm::mat4(1.0f);                        // Initialize as identity
+    modelUniforms.normalMatrix[0] = glm::vec4(normalMatrix3x3[0], 0.0f); // First row
+    modelUniforms.normalMatrix[1] = glm::vec4(normalMatrix3x3[1], 0.0f); // Second row
+    modelUniforms.normalMatrix[2] = glm::vec4(normalMatrix3x3[2], 0.0f); // Third row
+
+    // Upload the uniforms to the GPU
+    m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
 }
 
 void Renderer::GetAdapter(const std::function<void(wgpu::Adapter)> &callback)
