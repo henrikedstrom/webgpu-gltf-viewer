@@ -42,6 +42,7 @@ class Renderer
     void CreateVertexBuffer();
     void CreateIndexBuffer();
     void CreateUniformBuffers();
+    void CreateTexturesAndSamplers();
     void CreateGlobalBindGroup();
     void CreateModelBindGroup();
     void CreateRenderPipeline();
@@ -53,14 +54,16 @@ class Renderer
     // Types
     struct GlobalUniforms
     {
-        glm::mat4 viewMatrix;
-        glm::mat4 projectionMatrix;
+        alignas(16) glm::mat4 viewMatrix;
+        alignas(16) glm::mat4 projectionMatrix;
+        alignas(16) glm::vec3 cameraPosition;
+        alignas(16) float padding[1];
     };
 
     struct ModelUniforms
     {
-        glm::mat4 modelMatrix;
-        glm::mat4 normalMatrix;
+        alignas(16) glm::mat4 modelMatrix;
+        alignas(16) glm::mat4 normalMatrix;
     };
 
     // Private member variables
@@ -86,10 +89,23 @@ class Renderer
 
     // Model related data. TODO: Move to separate class
     wgpu::ShaderModule m_shaderModule;
+    wgpu::BindGroupLayout m_modelBindGroupLayout;
+    wgpu::BindGroup m_modelBindGroup;
     wgpu::RenderPipeline m_pipeline;
     wgpu::Buffer m_vertexBuffer;
     wgpu::Buffer m_indexBuffer;
     wgpu::Buffer m_modelUniformBuffer;
-    wgpu::BindGroupLayout m_modelBindGroupLayout;
-    wgpu::BindGroup m_modelBindGroup;
+    wgpu::Sampler m_sampler;
+
+    wgpu::Texture m_baseColorTexture;
+    wgpu::TextureView m_baseColorTextureView;
+    wgpu::Texture m_metallicRoughnessTexture;
+    wgpu::TextureView m_metallicRoughnessTextureView;
+    wgpu::Texture m_normalTexture;
+    wgpu::TextureView m_normalTextureView;
+    wgpu::Texture m_occlusionTexture;
+    wgpu::TextureView m_occlusionTextureView;
+    wgpu::Texture m_emissiveTexture;
+    wgpu::TextureView m_emissiveTextureView;
+    wgpu::TextureView m_textureView;
 };

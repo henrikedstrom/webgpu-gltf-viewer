@@ -317,8 +317,8 @@ void Model::Update(float deltaTime, bool animate)
         }
     }
 
-    // Rotation to correct orientation (90 degrees in radians for X-axis)
-    float xAxisAngle = PI / 2.0f; // 90 degrees
+    // Optional - rotation to correct orientation 
+    float xAxisAngle = 0.0f;//PI / 2.0f; // 90 degrees
     glm::mat4 xRotationMatrix = glm::rotate(glm::mat4(1.0f), xAxisAngle, glm::vec3(1.0f, 0.0f, 0.0f));
 
     // Create the Y-axis rotation matrix (dynamic rotation angle)
@@ -351,4 +351,13 @@ const std::vector<Model::Material> &Model::GetMaterials() const noexcept
 const std::vector<Model::Texture> &Model::GetTextures() const noexcept
 {
     return m_textures;
+}
+
+const Model::Texture *Model::GetTexture(int index) const noexcept
+{
+    if (index >= 0 && index < static_cast<int>(m_textures.size()))
+    {
+        return &m_textures[index];
+    }
+    return nullptr;
 }

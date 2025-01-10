@@ -65,6 +65,7 @@ class Model
     const std::vector<uint32_t> &GetIndices() const noexcept;
     const std::vector<Material> &GetMaterials() const noexcept;
     const std::vector<Texture> &GetTextures() const noexcept;
+    const Texture *GetTexture(int index) const noexcept;
 
   private:
     // Private Member Variables

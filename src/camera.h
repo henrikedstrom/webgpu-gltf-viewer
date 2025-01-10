@@ -43,8 +43,8 @@ class Camera
     float m_far{100.0f}; // Far clipping plane
 
     // Camera properties
-    glm::vec3 m_position{0.0f, 0.0f, -3.0f}; // Default camera position
-    glm::vec3 m_target{0.0f, 0.0f, 0.0f};    // Default target position
+    glm::vec3 m_position{0.0f, 0.0f, 5.0f}; // Default camera position
+    glm::vec3 m_target{0.0f, 0.0f, 0.0f};   // Default target position
 
     // Basis vectors
     glm::vec3 m_forward{0.0f, 0.0f, 1.0f}; // Forward vector

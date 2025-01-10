@@ -84,7 +84,8 @@ void Application::Run()
     m_controls = std::make_unique<OrbitControls>(m_window, &m_camera);
     glfwSetKeyCallback(m_window, KeyCallback);
 
-    m_model.LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
+    //m_model.LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
+    m_model.LoadModel("./assets/models/SciFiHelmet/SciFiHelmet.gltf");
 
     m_renderer.Initialize(m_window, &m_camera, &m_model, m_width, m_height, [this]() { MainLoop(); });
 }

@@ -31,6 +31,62 @@
 #include "renderer.h"
 
 //----------------------------------------------------------------------
+// Internal Utility Functions
+
+namespace
+{
+void CreateTexture(const Model::Texture *textureInfo, wgpu::Device device, wgpu::Texture &texture,
+                   wgpu::TextureView &textureView)
+{
+    // Default to 1x1 black texture (in case texture is missing)
+    const uint8_t blackPixel[] = {0, 0, 0, 255};
+    uint32_t width = 1;
+    uint32_t height = 1;
+    const uint8_t *data = const_cast<uint8_t *>(blackPixel);
+
+    if (textureInfo)
+    {
+        width = textureInfo->m_width;
+        height = textureInfo->m_height;
+        data = textureInfo->m_data.data();
+    }
+
+    // Create a WebGPU texture descriptor
+    wgpu::TextureDescriptor textureDescriptor{};
+    textureDescriptor.size = {width, height, 1};
+    textureDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+
+    texture = device.CreateTexture(&textureDescriptor);
+
+    // Write the image data to the texture
+    wgpu::ImageCopyTexture imageCopyTexture{};
+    imageCopyTexture.texture = texture;
+    imageCopyTexture.mipLevel = 0;
+
+    wgpu::Extent3D extent{width, height, 1};
+
+    wgpu::TextureDataLayout textureDataLayout{
+        .offset = 0,
+        .bytesPerRow = width * 4, // RGBA8
+        .rowsPerImage = height,
+    };
+
+    device.GetQueue().WriteTexture(&imageCopyTexture, data, width * 4 * height, &textureDataLayout, &extent);
+
+    // Create a texture view
+    wgpu::TextureViewDescriptor viewDescriptor{};
+    viewDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    viewDescriptor.dimension = wgpu::TextureViewDimension::e2D;
+    viewDescriptor.mipLevelCount = 1;
+    viewDescriptor.arrayLayerCount = 1;
+
+    textureView = texture.CreateView(&viewDescriptor);
+}
+
+} // namespace
+
+//----------------------------------------------------------------------
 // Renderer Class implementation
 
 void Renderer::Initialize(GLFWwindow *window, Camera *camera, Model *model, uint32_t width, uint32_t height,
@@ -129,6 +185,7 @@ void Renderer::InitGraphics()
     CreateVertexBuffer();
     CreateIndexBuffer();
     CreateUniformBuffers();
+    CreateTexturesAndSamplers();
     CreateRenderPipeline();
 }
 
@@ -193,6 +250,7 @@ void Renderer::CreateUniformBuffers()
     GlobalUniforms globalUniforms;
     globalUniforms.viewMatrix = glm::mat4(1.0f);       // Initialize as identity
     globalUniforms.projectionMatrix = glm::mat4(1.0f); // Initialize as identity
+    globalUniforms.cameraPosition = glm::vec3(0.0f, 0.0f, 0.0f);
 
     m_device.GetQueue().WriteBuffer(m_globalUniformBuffer, 0, &globalUniforms, sizeof(GlobalUniforms));
 
@@ -206,6 +264,52 @@ void Renderer::CreateUniformBuffers()
     modelUniforms.normalMatrix = glm::mat4(1.0f); // Initialize as identity
 
     m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
+}
+
+void Renderer::CreateTexturesAndSamplers()
+{
+    if (m_model->GetMaterials().empty())
+    {
+        return;
+    }
+
+    // Get the first Material from the Model for now. TODO: Support multiple materials
+    const Model::Material &material = m_model->GetMaterials().front();
+
+    // Base Color Texture
+    CreateTexture(m_model->GetTexture(material.m_baseColorTexture), m_device, m_baseColorTexture,
+                  m_baseColorTextureView);
+
+    // Metallic-Roughness
+    CreateTexture(m_model->GetTexture(material.m_metallicRoughnessTexture), m_device, m_metallicRoughnessTexture,
+                  m_metallicRoughnessTextureView);
+
+    // Normal Texture
+    CreateTexture(m_model->GetTexture(material.m_normalTexture), m_device, m_normalTexture, m_normalTextureView);
+
+    // Occlusion Texture
+    CreateTexture(m_model->GetTexture(material.m_occlusionTexture), m_device, m_occlusionTexture,
+                  m_occlusionTextureView);
+
+    // Emissive Texture
+    CreateTexture(m_model->GetTexture(material.m_emissiveTexture), m_device, m_emissiveTexture,
+                  m_emissiveTextureView);
+
+    // Create a sampler
+    wgpu::SamplerDescriptor samplerDescriptor{};
+    samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
+    samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
+    samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
+    samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+    samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest; // wgpu::MipmapFilterMode::Linear;
+
+    wgpu::Sampler sampler = m_device.CreateSampler(&samplerDescriptor);
+
+    // Store the sampler for use with all textures
+    m_sampler = sampler;
+
+    std::cout << "Textures, texture views, and sampler created successfully." << std::endl;
 }
 
 void Renderer::CreateGlobalBindGroup()
@@ -241,31 +345,106 @@ void Renderer::CreateGlobalBindGroup()
 
 void Renderer::CreateModelBindGroup()
 {
-    wgpu::BindGroupLayoutEntry bindGroupLayoutEntry{
-        .binding = 0,
-        .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
-        .buffer = {.type = wgpu::BufferBindingType::Uniform,
-                   .hasDynamicOffset = false,
-                   .minBindingSize = sizeof(ModelUniforms)},
+    wgpu::BindGroupLayoutEntry layoutEntries[7] = {
+        {
+            .binding = 0,
+            .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+            .buffer = {.type = wgpu::BufferBindingType::Uniform,
+                       .hasDynamicOffset = false,
+                       .minBindingSize = sizeof(ModelUniforms)},
+        },
+        {
+            // Sampler binding
+            .binding = 1,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .sampler = {.type = wgpu::SamplerBindingType::Filtering},
+        },
+        {
+            // Base color texture binding
+            .binding = 2,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .multisampled = false},
+        },
+        {
+            // Metallic-Roughness texture binding
+            .binding = 3,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .multisampled = false},
+        },
+        {
+            // Normal texture binding
+            .binding = 4,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .multisampled = false},
+        },
+        {
+            // Occlusion texture binding
+            .binding = 5,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .multisampled = false},
+        },
+        {
+            // Emissive texture binding
+            .binding = 6,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .multisampled = false},
+        },
+
     };
 
     wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
-        .entryCount = 1,
-        .entries = &bindGroupLayoutEntry,
+        .entryCount = 7,
+        .entries = layoutEntries,
     };
 
     m_modelBindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
 
-    wgpu::BindGroupEntry bindGroupEntry{};
-    bindGroupEntry.binding = 0;
-    bindGroupEntry.buffer = m_modelUniformBuffer;
-    bindGroupEntry.offset = 0;
-    bindGroupEntry.size = sizeof(ModelUniforms);
+    wgpu::BindGroupEntry bindGroupEntries[7] = {{
+                                                    .binding = 0,
+                                                    .buffer = m_modelUniformBuffer,
+                                                    .offset = 0,
+                                                    .size = sizeof(ModelUniforms),
+                                                },
+                                                {
+                                                    .binding = 1,
+                                                    .sampler = m_sampler,
+                                                },
+                                                {
+                                                    .binding = 2,
+                                                    .textureView = m_baseColorTextureView,
+                                                },
+                                                {
+                                                    .binding = 3,
+                                                    .textureView = m_metallicRoughnessTextureView,
+                                                },
+                                                {
+                                                    .binding = 4,
+                                                    .textureView = m_normalTextureView,
+                                                },
+                                                {
+                                                    .binding = 5,
+                                                    .textureView = m_occlusionTextureView,
+                                                },
+                                                {
+                                                    .binding = 6,
+                                                    .textureView = m_emissiveTextureView,
+                                                }};
 
-    wgpu::BindGroupDescriptor bindGroupDescriptor{};
-    bindGroupDescriptor.layout = m_modelBindGroupLayout;
-    bindGroupDescriptor.entryCount = 1;
-    bindGroupDescriptor.entries = &bindGroupEntry;
+    wgpu::BindGroupDescriptor bindGroupDescriptor{
+        .layout = m_modelBindGroupLayout,
+        .entryCount = 7,
+        .entries = bindGroupEntries,
+    };
 
     m_modelBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
@@ -339,6 +518,7 @@ void Renderer::UpdateUniforms() const
     GlobalUniforms globalUniforms;
     globalUniforms.viewMatrix = m_camera->GetViewMatrix();
     globalUniforms.projectionMatrix = m_camera->GetProjectionMatrix();
+    globalUniforms.cameraPosition = m_camera->GetWorldPosition();
 
     // Upload the uniforms to the GPU
     m_device.GetQueue().WriteBuffer(m_globalUniformBuffer, 0, &globalUniforms, sizeof(GlobalUniforms));
