@@ -6,6 +6,7 @@
 
 // Project Headers
 #include "camera.h"
+#include "environment.h"
 #include "model.h"
 #include "orbit_controls.h"
 #include "renderer.h"
@@ -51,6 +52,7 @@ class Application
 
     GLFWwindow *m_window = nullptr;
     Camera m_camera;
+    Environment m_environment;
     Model m_model;
     Renderer m_renderer;
 

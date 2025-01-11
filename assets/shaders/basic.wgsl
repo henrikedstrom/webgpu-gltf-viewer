@@ -5,6 +5,8 @@
 struct GlobalUniforms {
     viewMatrix: mat4x4<f32>,
     projectionMatrix: mat4x4<f32>,
+    inverseViewMatrix: mat4x4<f32>,
+    inverseProjectionMatrix: mat4x4<f32>,
     cameraPositionWorld: vec3<f32>
 };
 
@@ -38,7 +40,7 @@ struct VertexInput {
 };
 
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>,         // Clip-space position
+    @builtin(position) position: vec4<f32>,     // Clip-space position
     @location(0) color: vec4<f32>,              // Vertex color
     @location(1) texCoord0: vec2<f32>,          // Texture coordinate 0
     @location(2) texCoord1: vec2<f32>,          // Texture coordinate 1
@@ -50,6 +52,9 @@ struct VertexOutput {
 // Bind Groups
 
 @group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
+@group(0) @binding(1) var environmentSampler: sampler;
+@group(0) @binding(2) var environmentTexture: texture_2d<f32>;
+
 @group(1) @binding(0) var<uniform> modelUniforms: ModelUniforms;
 @group(1) @binding(1) var textureSampler: sampler;
 @group(1) @binding(2) var baseColorTexture: texture_2d<f32>;

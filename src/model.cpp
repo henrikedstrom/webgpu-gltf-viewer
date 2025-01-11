@@ -223,7 +223,6 @@ void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std
     texture.m_width = image.width;
     texture.m_height = image.height;
     texture.m_components = image.component;
-    texture.m_mimeType = image.mimeType;
 
     if (!image.image.empty())
     {
@@ -235,7 +234,7 @@ void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std
         // Image data is external, load it using stb_image
         std::string imagePath = basePath + "/" + image.uri;
         int width, height, components;
-        unsigned char *data = stbi_load(imagePath.c_str(), &width, &height, &components, 0);
+        unsigned char *data = stbi_load(imagePath.c_str(), &width, &height, &components, 4 /* force 4 channels */);
         if (data)
         {
             texture.m_width = width;
@@ -262,7 +261,7 @@ void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std
 //----------------------------------------------------------------------
 // Model Class Implementation
 
-void Model::LoadModel(const std::string &filename)
+void Model::Load(const std::string &filename)
 {
     m_transform = glm::mat4(1.0f); // Reset the model transformation matrix
     m_rotationAngle = 0.0f;        // Reset the model rotation angle

@@ -26,6 +26,7 @@
 // Project Headers
 #include "application.h"
 #include "camera.h"
+#include "environment.h"
 #include "model.h"
 #include "orbit_controls.h"
 #include "renderer.h"
@@ -107,7 +108,8 @@ void WriteMipMaps(wgpu::Device device, wgpu::Texture texture, wgpu::Extent3D tex
     }
 }
 
-void CreateTexture(const Model::Texture *textureInfo, wgpu::Device device, wgpu::Texture &texture,
+template <typename TextureInfo>
+void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, wgpu::Texture &texture,
                    wgpu::TextureView &textureView)
 {
     // Default to 1x1 black texture (in case texture is missing)
@@ -154,11 +156,12 @@ void CreateTexture(const Model::Texture *textureInfo, wgpu::Device device, wgpu:
 //----------------------------------------------------------------------
 // Renderer Class implementation
 
-void Renderer::Initialize(GLFWwindow *window, Camera *camera, Model *model, uint32_t width, uint32_t height,
-                          const std::function<void()> &callback)
+void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *environment, Model *model, uint32_t width,
+                          uint32_t height, const std::function<void()> &callback)
 {
     m_window = window;
     m_camera = camera;
+    m_environment = environment;
     m_model = model;
     m_width = width;
     m_height = height;
@@ -229,12 +232,22 @@ void Renderer::Render()
 
     wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
     wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderpass);
-    pass.SetPipeline(m_pipeline);
+
+    // Set bind groups
     pass.SetBindGroup(0, m_globalBindGroup);
     pass.SetBindGroup(1, m_modelBindGroup);
+
+    // Render the environment
+    pass.SetPipeline(m_environmentPipeline);
+    pass.Draw(6, 1, 0, 0);
+
+    // Render the model
+    pass.SetPipeline(m_modelPipeline);
     pass.SetVertexBuffer(0, m_vertexBuffer);
     pass.SetIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint32);
     pass.DrawIndexed(static_cast<uint32_t>(m_model->GetIndices().size()));
+
+    // End the pass
     pass.End();
 
     wgpu::CommandBuffer commands = encoder.Finish();
@@ -248,10 +261,12 @@ void Renderer::Render()
 
 void Renderer::ReloadShaders()
 {
-    m_pipeline = nullptr;
-    m_shaderModule = nullptr;
+    m_environmentPipeline = nullptr;
+    m_environmentShaderModule = nullptr;
+    m_modelPipeline = nullptr;
+    m_modelShaderModule = nullptr;
 
-    CreateRenderPipeline();
+    CreateRenderPipelines();
 }
 
 void Renderer::InitGraphics()
@@ -263,7 +278,7 @@ void Renderer::InitGraphics()
     CreateIndexBuffer();
     CreateUniformBuffers();
     CreateTexturesAndSamplers();
-    CreateRenderPipeline();
+    CreateRenderPipelines();
 }
 
 void Renderer::ConfigureSurface()
@@ -325,8 +340,10 @@ void Renderer::CreateUniformBuffers()
 
     // Initialize Global Uniforms with default values
     GlobalUniforms globalUniforms;
-    globalUniforms.viewMatrix = glm::mat4(1.0f);       // Initialize as identity
-    globalUniforms.projectionMatrix = glm::mat4(1.0f); // Initialize as identity
+    globalUniforms.viewMatrix = glm::mat4(1.0f);              // Initialize as identity
+    globalUniforms.projectionMatrix = glm::mat4(1.0f);        // Initialize as identity
+    globalUniforms.inverseViewMatrix = glm::mat4(1.0f);       // Initialize as identity
+    globalUniforms.inverseProjectionMatrix = glm::mat4(1.0f); // Initialize as identity
     globalUniforms.cameraPosition = glm::vec3(0.0f, 0.0f, 0.0f);
 
     m_device.GetQueue().WriteBuffer(m_globalUniformBuffer, 0, &globalUniforms, sizeof(GlobalUniforms));
@@ -345,77 +362,113 @@ void Renderer::CreateUniformBuffers()
 
 void Renderer::CreateTexturesAndSamplers()
 {
-    if (m_model->GetMaterials().empty())
-    {
-        return;
-    }
+    // Create the environment texture
+    CreateTexture(&m_environment->GetTexture(), m_device, m_environmentTexture, m_environmentTextureView);
 
-    // Get the first Material from the Model for now. TODO: Support multiple materials
-    const Model::Material &material = m_model->GetMaterials().front();
-
-    // Base Color Texture
-    CreateTexture(m_model->GetTexture(material.m_baseColorTexture), m_device, m_baseColorTexture,
-                  m_baseColorTextureView);
-
-    // Metallic-Roughness
-    CreateTexture(m_model->GetTexture(material.m_metallicRoughnessTexture), m_device, m_metallicRoughnessTexture,
-                  m_metallicRoughnessTextureView);
-
-    // Normal Texture
-    CreateTexture(m_model->GetTexture(material.m_normalTexture), m_device, m_normalTexture, m_normalTextureView);
-
-    // Occlusion Texture
-    CreateTexture(m_model->GetTexture(material.m_occlusionTexture), m_device, m_occlusionTexture,
-                  m_occlusionTextureView);
-
-    // Emissive Texture
-    CreateTexture(m_model->GetTexture(material.m_emissiveTexture), m_device, m_emissiveTexture,
-                  m_emissiveTextureView);
-
-    // Create a sampler
+    // Create a sampler for the environment texture
     wgpu::SamplerDescriptor samplerDescriptor{};
     samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
     samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
     samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
     samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
     samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest; // wgpu::MipmapFilterMode::Linear;
+    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+    m_environmentSampler = m_device.CreateSampler(&samplerDescriptor);
 
-    wgpu::Sampler sampler = m_device.CreateSampler(&samplerDescriptor);
+    // Check if the model has any textures
+    if (!m_model->GetMaterials().empty())
+    {
 
-    // Store the sampler for use with all textures
-    m_sampler = sampler;
+        // Get the first Material from the Model for now. TODO: Support multiple materials
+        const Model::Material &material = m_model->GetMaterials().front();
 
-    std::cout << "Textures, texture views, and sampler created successfully." << std::endl;
+        // Base Color Texture
+        CreateTexture(m_model->GetTexture(material.m_baseColorTexture), m_device, m_baseColorTexture,
+                      m_baseColorTextureView);
+
+        // Metallic-Roughness
+        CreateTexture(m_model->GetTexture(material.m_metallicRoughnessTexture), m_device, m_metallicRoughnessTexture,
+                      m_metallicRoughnessTextureView);
+
+        // Normal Texture
+        CreateTexture(m_model->GetTexture(material.m_normalTexture), m_device, m_normalTexture, m_normalTextureView);
+
+        // Occlusion Texture
+        CreateTexture(m_model->GetTexture(material.m_occlusionTexture), m_device, m_occlusionTexture,
+                      m_occlusionTextureView);
+
+        // Emissive Texture
+        CreateTexture(m_model->GetTexture(material.m_emissiveTexture), m_device, m_emissiveTexture,
+                      m_emissiveTextureView);
+
+        // Create a sampler for model textures
+        samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
+        samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
+        samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
+        samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+        m_sampler = m_device.CreateSampler(&samplerDescriptor);
+
+        std::cout << "Textures, texture views, and sampler created successfully." << std::endl;
+    }
 }
 
 void Renderer::CreateGlobalBindGroup()
 {
-    wgpu::BindGroupLayoutEntry bindGroupLayoutEntry{
-        .binding = 0,
-        .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
-        .buffer = {.type = wgpu::BufferBindingType::Uniform,
-                   .hasDynamicOffset = false,
-                   .minBindingSize = sizeof(GlobalUniforms)},
+    wgpu::BindGroupLayoutEntry layoutEntries[3] = {
+        {
+            .binding = 0,
+            .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
+            .buffer = {.type = wgpu::BufferBindingType::Uniform,
+                       .hasDynamicOffset = false,
+                       .minBindingSize = sizeof(GlobalUniforms)},
+        },
+        {
+            // Sampler binding
+            .binding = 1,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .sampler = {.type = wgpu::SamplerBindingType::Filtering},
+        },
+        {
+            // Environment texture binding
+            .binding = 2,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .multisampled = false},
+        },
     };
 
     wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
-        .entryCount = 1,
-        .entries = &bindGroupLayoutEntry,
+        .entryCount = 3,
+        .entries = layoutEntries,
     };
 
     m_globalBindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
 
-    wgpu::BindGroupEntry bindGroupEntry{};
-    bindGroupEntry.binding = 0;
-    bindGroupEntry.buffer = m_globalUniformBuffer;
-    bindGroupEntry.offset = 0;
-    bindGroupEntry.size = sizeof(GlobalUniforms);
+    wgpu::BindGroupEntry bindGroupEntries[3] = {
+        {
+            .binding = 0,
+            .buffer = m_globalUniformBuffer,
+            .offset = 0,
+            .size = sizeof(GlobalUniforms),
+        },
+        {
+            .binding = 1,
+            .sampler = m_environmentSampler,
+        },
+        {
+            .binding = 2,
+            .textureView = m_environmentTextureView,
+        },
+    };
 
-    wgpu::BindGroupDescriptor bindGroupDescriptor{};
-    bindGroupDescriptor.layout = m_globalBindGroupLayout;
-    bindGroupDescriptor.entryCount = 1;
-    bindGroupDescriptor.entries = &bindGroupEntry;
+    wgpu::BindGroupDescriptor bindGroupDescriptor{
+        .layout = m_globalBindGroupLayout,
+        .entryCount = 3,
+        .entries = bindGroupEntries,
+    };
 
     m_globalBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
@@ -526,14 +579,14 @@ void Renderer::CreateModelBindGroup()
     m_modelBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
-void Renderer::CreateRenderPipeline()
+void Renderer::CreateRenderPipelines()
 {
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
     const std::string shader = LoadShaderFile("./assets/shaders/basic.wgsl");
     wgslDesc.code = shader.c_str();
 
     wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgslDesc};
-    m_shaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
+    m_modelShaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::VertexAttribute vertexAttributes[] = {
         {.format = wgpu::VertexFormat::Float32x3, .offset = offsetof(Model::Vertex, m_position), .shaderLocation = 0},
@@ -554,7 +607,7 @@ void Renderer::CreateRenderPipeline()
     wgpu::ColorTargetState colorTargetState{.format = m_surfaceFormat};
 
     wgpu::FragmentState fragmentState{
-        .module = m_shaderModule, .entryPoint = "fragmentMain", .targetCount = 1, .targets = &colorTargetState};
+        .module = m_modelShaderModule, .entryPoint = "fragmentMain", .targetCount = 1, .targets = &colorTargetState};
 
     wgpu::DepthStencilState depthStencilState{
         .format = wgpu::TextureFormat::Depth24PlusStencil8,
@@ -577,7 +630,7 @@ void Renderer::CreateRenderPipeline()
     wgpu::RenderPipelineDescriptor descriptor{.layout = pipelineLayout,
                                               .vertex =
                                                   {
-                                                      .module = m_shaderModule,
+                                                      .module = m_modelShaderModule,
                                                       .entryPoint = "vertexMain",
                                                       .bufferCount = 1,
                                                       .buffers = &vertexBufferLayout,
@@ -586,7 +639,43 @@ void Renderer::CreateRenderPipeline()
                                               .depthStencil = &depthStencilState,
                                               .fragment = &fragmentState};
 
-    m_pipeline = m_device.CreateRenderPipeline(&descriptor);
+    m_modelPipeline = m_device.CreateRenderPipeline(&descriptor);
+
+    // Create an environment pipeline
+    wgpu::ShaderModuleWGSLDescriptor environmentWgslDesc{};
+    const std::string environmentShader = LoadShaderFile("./assets/shaders/environment.wgsl");
+    environmentWgslDesc.code = environmentShader.c_str();
+
+    wgpu::ShaderModuleDescriptor environmentShaderModuleDescriptor{.nextInChain = &environmentWgslDesc};
+    m_environmentShaderModule = m_device.CreateShaderModule(&environmentShaderModuleDescriptor);
+
+    wgpu::FragmentState environmentFragmentState{.module = m_environmentShaderModule,
+                                                 .entryPoint = "fragmentMain",
+                                                 .targetCount = 1,
+                                                 .targets = &colorTargetState};
+
+    wgpu::BindGroupLayout environmentBindGroupLayouts[] = {m_globalBindGroupLayout};
+    wgpu::PipelineLayoutDescriptor environmentLayoutDescriptor{
+        .bindGroupLayoutCount = 1,
+        .bindGroupLayouts = environmentBindGroupLayouts,
+    };
+    wgpu::PipelineLayout environmentPipelineLayout = m_device.CreatePipelineLayout(&environmentLayoutDescriptor);
+
+    depthStencilState.depthWriteEnabled = false; // Disable depth writes for the environment
+    wgpu::RenderPipelineDescriptor environmentDescriptor{
+        .layout = environmentPipelineLayout,
+        .vertex =
+            {
+                .module = m_environmentShaderModule,
+                .entryPoint = "vertexMain",
+                .bufferCount = 0,
+                .buffers = nullptr, // Vertices encoded in shader
+            },
+        .primitive = {.topology = wgpu::PrimitiveTopology::TriangleList},
+        .depthStencil = &depthStencilState,
+        .fragment = &environmentFragmentState};
+
+    m_environmentPipeline = m_device.CreateRenderPipeline(&environmentDescriptor);
 }
 
 void Renderer::UpdateUniforms() const
@@ -595,6 +684,8 @@ void Renderer::UpdateUniforms() const
     GlobalUniforms globalUniforms;
     globalUniforms.viewMatrix = m_camera->GetViewMatrix();
     globalUniforms.projectionMatrix = m_camera->GetProjectionMatrix();
+    globalUniforms.inverseViewMatrix = glm::inverse(globalUniforms.viewMatrix);
+    globalUniforms.inverseProjectionMatrix = glm::inverse(globalUniforms.projectionMatrix);
     globalUniforms.cameraPosition = m_camera->GetWorldPosition();
 
     // Upload the uniforms to the GPU

@@ -12,6 +12,7 @@
 
 // Forward Declarations
 class Camera;
+class Environment;
 class Model;
 struct GLFWwindow;
 
@@ -29,8 +30,8 @@ class Renderer
     Renderer &operator=(Renderer &&) = delete;
 
     // Public Interface
-    void Initialize(GLFWwindow *window, Camera *camera, Model *model, uint32_t width, uint32_t height,
-                    const std::function<void()> &callback);
+    void Initialize(GLFWwindow *window, Camera *camera, Environment *environment, Model *model, uint32_t width,
+                    uint32_t height, const std::function<void()> &callback);
     void Resize(uint32_t width, uint32_t height);
     void Render();
     void ReloadShaders();
@@ -46,7 +47,7 @@ class Renderer
     void CreateTexturesAndSamplers();
     void CreateGlobalBindGroup();
     void CreateModelBindGroup();
-    void CreateRenderPipeline();
+    void CreateRenderPipelines();
     void UpdateUniforms() const;
     void GetAdapter(const std::function<void(wgpu::Adapter)> &callback);
     void GetDevice(const std::function<void(wgpu::Device)> &callback);
@@ -57,6 +58,8 @@ class Renderer
     {
         alignas(16) glm::mat4 viewMatrix;
         alignas(16) glm::mat4 projectionMatrix;
+        alignas(16) glm::mat4 inverseViewMatrix;
+        alignas(16) glm::mat4 inverseProjectionMatrix;
         alignas(16) glm::vec3 cameraPosition;
         alignas(16) float padding[1];
     };
@@ -72,6 +75,7 @@ class Renderer
     uint32_t m_width = 0;
     uint32_t m_height = 0;
     Camera *m_camera = nullptr;
+    Environment *m_environment = nullptr;
     Model *m_model = nullptr;
 
     // WebGPU variables
@@ -88,11 +92,18 @@ class Renderer
     wgpu::BindGroupLayout m_globalBindGroupLayout;
     wgpu::BindGroup m_globalBindGroup;
 
+    // Environment related data
+    wgpu::Texture m_environmentTexture;
+    wgpu::TextureView m_environmentTextureView;
+    wgpu::Sampler m_environmentSampler;
+    wgpu::ShaderModule m_environmentShaderModule;
+    wgpu::RenderPipeline m_environmentPipeline;
+
     // Model related data. TODO: Move to separate class
-    wgpu::ShaderModule m_shaderModule;
+    wgpu::ShaderModule m_modelShaderModule;
     wgpu::BindGroupLayout m_modelBindGroupLayout;
     wgpu::BindGroup m_modelBindGroup;
-    wgpu::RenderPipeline m_pipeline;
+    wgpu::RenderPipeline m_modelPipeline;
     wgpu::Buffer m_vertexBuffer;
     wgpu::Buffer m_indexBuffer;
     wgpu::Buffer m_modelUniformBuffer;

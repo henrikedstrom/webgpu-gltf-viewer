@@ -39,11 +39,10 @@ class Model
     struct Texture
     {
         std::string m_name;          // Name of the texture
-        int m_width = 0;             // Width of the texture
-        int m_height = 0;            // Height of the texture
-        int m_components = 0;        // Components per pixel (e.g., 3 = RGB, 4 = RGBA)
+        uint32_t m_width = 0;        // Width of the texture
+        uint32_t m_height = 0;       // Height of the texture
+        uint32_t m_components = 0;   // Components per pixel (e.g., 3 = RGB, 4 = RGBA)
         std::vector<uint8_t> m_data; // Raw pixel data
-        std::string m_mimeType;      // MIME type (e.g., image/png)
     };
 
     // Constructor
@@ -56,7 +55,7 @@ class Model
     Model &operator=(Model &&) = default;
 
     // Public Interface
-    void LoadModel(const std::string &filename);
+    void Load(const std::string &filename);
     void Update(float deltaTime, bool animate);
 
     // Accessors

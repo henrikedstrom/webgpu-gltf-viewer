@@ -7,8 +7,8 @@
 #include "application.h"
 
 // Application default dimensions
-constexpr uint32_t kDefaultWidth = 512;
-constexpr uint32_t kDefaultHeight = 512;
+constexpr uint32_t kDefaultWidth = 800;
+constexpr uint32_t kDefaultHeight = 600;
 
 // Main function
 int main()

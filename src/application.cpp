@@ -87,10 +87,12 @@ void Application::Run()
         Application::GetInstance()->OnResize(width, height);
     });
 
-    //m_model.LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
-    m_model.LoadModel("./assets/models/SciFiHelmet/SciFiHelmet.gltf");
+    m_environment.Load("./assets/environments/helipad.hdr");
 
-    m_renderer.Initialize(m_window, &m_camera, &m_model, m_width, m_height, [this]() { MainLoop(); });
+    // m_model.Load("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
+    m_model.Load("./assets/models/SciFiHelmet/SciFiHelmet.gltf");
+
+    m_renderer.Initialize(m_window, &m_camera, &m_environment, &m_model, m_width, m_height, [this]() { MainLoop(); });
 }
 
 void Application::MainLoop()
