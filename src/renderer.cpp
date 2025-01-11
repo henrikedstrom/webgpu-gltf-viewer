@@ -35,6 +35,78 @@
 
 namespace
 {
+
+template <typename ComponentType>
+void WriteMipMaps(wgpu::Device device, wgpu::Texture texture, wgpu::Extent3D textureSize, uint32_t mipLevelCount,
+                  const ComponentType *pixelData)
+{
+    // Arguments specifying which part of the texture to upload to
+    wgpu::ImageCopyTexture destination;
+    destination.texture = texture;
+    destination.origin = {0, 0, 0};
+    destination.aspect = wgpu::TextureAspect::All;
+
+    // Arguments specifying how the C++ pixel memory is laid out
+    wgpu::TextureDataLayout source;
+    source.offset = 0;
+
+    // Create image data
+    wgpu::Extent3D mipLevelSize = textureSize;
+    std::vector<ComponentType> previousLevelPixels;
+    wgpu::Extent3D previousMipLevelSize;
+
+    for (uint32_t level = 0; level < mipLevelCount; ++level)
+    {
+        // Pixel data for the current level
+        std::vector<ComponentType> pixels(4 * mipLevelSize.width * mipLevelSize.height);
+
+        if (level == 0)
+        {
+            // Copy the original data into the current level
+            memcpy(pixels.data(), pixelData, pixels.size() * sizeof(ComponentType));
+        }
+        else
+        {
+            // Create mip level data
+            for (uint32_t i = 0; i < mipLevelSize.width; ++i)
+            {
+                for (uint32_t j = 0; j < mipLevelSize.height; ++j)
+                {
+                    ComponentType *p = &pixels[4 * (j * mipLevelSize.width + i)];
+                    // Get the corresponding 4 pixels from the previous level
+                    ComponentType *p00 =
+                        &previousLevelPixels[4 * ((2 * j + 0) * previousMipLevelSize.width + (2 * i + 0))];
+                    ComponentType *p01 =
+                        &previousLevelPixels[4 * ((2 * j + 0) * previousMipLevelSize.width + (2 * i + 1))];
+                    ComponentType *p10 =
+                        &previousLevelPixels[4 * ((2 * j + 1) * previousMipLevelSize.width + (2 * i + 0))];
+                    ComponentType *p11 =
+                        &previousLevelPixels[4 * ((2 * j + 1) * previousMipLevelSize.width + (2 * i + 1))];
+
+                    // Average the 4 pixels
+                    p[0] = (p00[0] + p01[0] + p10[0] + p11[0]) / static_cast<ComponentType>(4);
+                    p[1] = (p00[1] + p01[1] + p10[1] + p11[1]) / static_cast<ComponentType>(4);
+                    p[2] = (p00[2] + p01[2] + p10[2] + p11[2]) / static_cast<ComponentType>(4);
+                    p[3] = (p00[3] + p01[3] + p10[3] + p11[3]) / static_cast<ComponentType>(4);
+                }
+            }
+        }
+
+        // Upload data to the GPU texture
+        destination.mipLevel = level;
+        source.bytesPerRow = 4 * mipLevelSize.width * sizeof(ComponentType);
+        source.rowsPerImage = mipLevelSize.height;
+
+        device.GetQueue().WriteTexture(&destination, pixels.data(), pixels.size() * sizeof(ComponentType), &source,
+                                       &mipLevelSize);
+
+        previousLevelPixels = std::move(pixels);
+        previousMipLevelSize = mipLevelSize;
+        mipLevelSize.width /= 2;
+        mipLevelSize.height /= 2;
+    }
+}
+
 void CreateTexture(const Model::Texture *textureInfo, wgpu::Device device, wgpu::Texture &texture,
                    wgpu::TextureView &textureView)
 {
@@ -51,34 +123,27 @@ void CreateTexture(const Model::Texture *textureInfo, wgpu::Device device, wgpu:
         data = textureInfo->m_data.data();
     }
 
-    // Create a WebGPU texture descriptor
+    // Compute the number of mip levels
+    uint32_t mipLevelCount = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+
+    // Create a WebGPU texture descriptor with mipmapping enabled
     wgpu::TextureDescriptor textureDescriptor{};
     textureDescriptor.size = {width, height, 1};
     textureDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
-    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+    textureDescriptor.usage =
+        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::RenderAttachment;
+    textureDescriptor.mipLevelCount = mipLevelCount;
 
     texture = device.CreateTexture(&textureDescriptor);
 
-    // Write the image data to the texture
-    wgpu::ImageCopyTexture imageCopyTexture{};
-    imageCopyTexture.texture = texture;
-    imageCopyTexture.mipLevel = 0;
+    // Generate mipmaps
+    WriteMipMaps(device, texture, textureDescriptor.size, mipLevelCount, data);
 
-    wgpu::Extent3D extent{width, height, 1};
-
-    wgpu::TextureDataLayout textureDataLayout{
-        .offset = 0,
-        .bytesPerRow = width * 4, // RGBA8
-        .rowsPerImage = height,
-    };
-
-    device.GetQueue().WriteTexture(&imageCopyTexture, data, width * 4 * height, &textureDataLayout, &extent);
-
-    // Create a texture view
+    // Create a texture view covering all mip levels
     wgpu::TextureViewDescriptor viewDescriptor{};
     viewDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
     viewDescriptor.dimension = wgpu::TextureViewDimension::e2D;
-    viewDescriptor.mipLevelCount = 1;
+    viewDescriptor.mipLevelCount = mipLevelCount;
     viewDescriptor.arrayLayerCount = 1;
 
     textureView = texture.CreateView(&viewDescriptor);
