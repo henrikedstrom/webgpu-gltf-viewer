@@ -31,6 +31,7 @@ class Renderer
     // Public Interface
     void Initialize(GLFWwindow *window, Camera *camera, Model *model, uint32_t width, uint32_t height,
                     const std::function<void()> &callback);
+    void Resize(uint32_t width, uint32_t height);
     void Render();
     void ReloadShaders();
 

@@ -33,6 +33,7 @@ class Application
     // Public Interface
     void Run();
     void OnKeyPressed(int key);
+    void OnResize(int width, int height);
 
   private:
     // Private Member Functions

@@ -80,9 +80,12 @@ void Application::Run()
 
     m_camera.ResizeViewport(m_width, m_height);
 
-    // Setup mouse and keyboard input callbacks
+    // Setup input callbacks
     m_controls = std::make_unique<OrbitControls>(m_window, &m_camera);
     glfwSetKeyCallback(m_window, KeyCallback);
+    glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow *window, int width, int height) {
+        Application::GetInstance()->OnResize(width, height);
+    });
 
     //m_model.LoadModel("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
     m_model.LoadModel("./assets/models/SciFiHelmet/SciFiHelmet.gltf");
@@ -128,4 +131,12 @@ void Application::OnKeyPressed(int key)
     {
         m_renderer.ReloadShaders();
     }
+}
+
+void Application::OnResize(int width, int height)
+{
+    m_width = width;
+    m_height = height;
+    m_camera.ResizeViewport(width, height);
+    m_renderer.Resize(width, height);
 }
