@@ -1,5 +1,7 @@
 // Standard Library Headers
 #include <iostream>
+#include <string>
+#include <filesystem>
 
 // Third-Party Library Headers
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -14,31 +16,52 @@
 #include "environment.h"
 
 //----------------------------------------------------------------------
+// Internal Utility Functions
+
+namespace
+{
+    void LoadTexture(const std::string &filename, Environment::Texture &texture)
+    {
+        // Load the texture
+        int width, height, components;
+        uint8_t *data = stbi_load(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
+        if (data)
+        {
+            components = 4; // force 4 channels
+            texture.m_width = width;
+            texture.m_height = height;
+            texture.m_components = components;
+            texture.m_data = std::vector<uint8_t>(data, data + (width * height * components));
+            stbi_image_free(data);
+
+            std::cout << "Loaded environment texture: " << filename << " (" << width << "x" << height << ")" << std::endl;
+        }
+        else
+        {
+            std::cerr << "Failed to load image: " << filename << std::endl;
+        }
+    }
+} // namespace
+
+//----------------------------------------------------------------------
 // Environment Class Implementation
 
 void Environment::Load(const std::string &filename)
 {
     m_transform = glm::mat4(1.0f); // Reset the environment transformation matrix
-    m_texture.m_name = filename;   // Set the texture name
 
-    // Load the environment texture
-    int width, height, components;
-    uint8_t *data = stbi_load(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
-    if (data)
-    {
-        components = 4; // force 4 channels
-        m_texture.m_width = width;
-        m_texture.m_height = height;
-        m_texture.m_components = components;
-        m_texture.m_data = std::vector<uint8_t>(data, data + (width * height * components));
-        stbi_image_free(data);
+    // Extract the base name, extension, and parent path
+    std::filesystem::path filePath(filename);
+    std::string baseName = filePath.stem().string();  // Extracts the filename without extension
+    std::string extension = filePath.extension().string(); // Extracts the original extension
+    std::string parentPath = filePath.has_parent_path() ? filePath.parent_path().string() + "/" : "";
+    std::string irradianceFilename = parentPath + baseName + "_irradiance" + extension;
 
-        std::cout << "Loaded environment texture: " << filename << " (" << width << "x" << height << ")" << std::endl;
-    }
-    else
-    {
-        std::cerr << "Failed to load image: " << filename << std::endl;
-    }
+    // Load the background texture
+    LoadTexture(filename, m_backgroundTexture);
+
+    // Load the irradiance texture
+    LoadTexture(irradianceFilename, m_irradianceTexture);
 }
 
 void Environment::UpdateRotation(float rotationAngle)
@@ -52,7 +75,12 @@ const glm::mat4 &Environment::GetTransform() const noexcept
     return m_transform;
 }
 
-const Environment::Texture &Environment::GetTexture() const noexcept
+const Environment::Texture &Environment::GetBackgroundTexture() const noexcept
 {
-    return m_texture;
+    return m_backgroundTexture;
+}
+
+const Environment::Texture &Environment::GetIrradianceTexture() const noexcept
+{
+    return m_irradianceTexture;
 }

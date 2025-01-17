@@ -37,10 +37,12 @@ class Environment
 
     // Accessors
     const glm::mat4 &GetTransform() const noexcept;
-    const Texture &GetTexture() const noexcept;
+    const Texture &GetBackgroundTexture() const noexcept;
+    const Texture &GetIrradianceTexture() const noexcept;
 
   private:
     // Private Member Variables
     glm::mat4 m_transform{1.0f};
-    Texture m_texture;
+    Texture m_backgroundTexture;
+    Texture m_irradianceTexture;
 };

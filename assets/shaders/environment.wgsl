@@ -28,6 +28,7 @@ struct VertexOutput {
 @group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
 @group(0) @binding(1) var environmentSampler: sampler;
 @group(0) @binding(2) var environmentTexture: texture_2d<f32>;
+@group(0) @binding(3) var environmentIrradianceTexture: texture_2d<f32>;
 
 
 //---------------------------------------------------------------------

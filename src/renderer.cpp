@@ -362,8 +362,10 @@ void Renderer::CreateUniformBuffers()
 
 void Renderer::CreateTexturesAndSamplers()
 {
-    // Create the environment texture
-    CreateTexture(&m_environment->GetTexture(), m_device, m_environmentTexture, m_environmentTextureView);
+    // Create the environment textures
+    CreateTexture(&m_environment->GetBackgroundTexture(), m_device, m_environmentTexture, m_environmentTextureView);
+    CreateTexture(&m_environment->GetIrradianceTexture(), m_device, m_environmentIrradianceTexture,
+                  m_environmentIrradianceTextureView);
 
     // Create a sampler for the environment texture
     wgpu::SamplerDescriptor samplerDescriptor{};
@@ -416,7 +418,7 @@ void Renderer::CreateTexturesAndSamplers()
 
 void Renderer::CreateGlobalBindGroup()
 {
-    wgpu::BindGroupLayoutEntry layoutEntries[3] = {
+    wgpu::BindGroupLayoutEntry layoutEntries[4] = {
         {
             .binding = 0,
             .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
@@ -438,16 +440,24 @@ void Renderer::CreateGlobalBindGroup()
                         .viewDimension = wgpu::TextureViewDimension::e2D,
                         .multisampled = false},
         },
+        {
+            // Environment irradiance texture binding
+            .binding = 3,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .multisampled = false},
+        },
     };
 
     wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
-        .entryCount = 3,
+        .entryCount = 4,
         .entries = layoutEntries,
     };
 
     m_globalBindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
 
-    wgpu::BindGroupEntry bindGroupEntries[3] = {
+    wgpu::BindGroupEntry bindGroupEntries[4] = {
         {
             .binding = 0,
             .buffer = m_globalUniformBuffer,
@@ -462,11 +472,15 @@ void Renderer::CreateGlobalBindGroup()
             .binding = 2,
             .textureView = m_environmentTextureView,
         },
+        {
+            .binding = 3,
+            .textureView = m_environmentIrradianceTextureView,
+        },
     };
 
     wgpu::BindGroupDescriptor bindGroupDescriptor{
         .layout = m_globalBindGroupLayout,
-        .entryCount = 3,
+        .entryCount = 4,
         .entries = bindGroupEntries,
     };
 
@@ -582,7 +596,7 @@ void Renderer::CreateModelBindGroup()
 void Renderer::CreateRenderPipelines()
 {
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
-    const std::string shader = LoadShaderFile("./assets/shaders/basic.wgsl");
+    const std::string shader = LoadShaderFile("./assets/shaders/gltf_pbr.wgsl");
     wgslDesc.code = shader.c_str();
 
     wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgslDesc};

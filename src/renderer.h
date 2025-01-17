@@ -95,6 +95,8 @@ class Renderer
     // Environment related data
     wgpu::Texture m_environmentTexture;
     wgpu::TextureView m_environmentTextureView;
+    wgpu::Texture m_environmentIrradianceTexture;
+    wgpu::TextureView m_environmentIrradianceTextureView;
     wgpu::Sampler m_environmentSampler;
     wgpu::ShaderModule m_environmentShaderModule;
     wgpu::RenderPipeline m_environmentPipeline;
