@@ -53,8 +53,8 @@ struct VertexOutput {
 
 @group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
 @group(0) @binding(1) var environmentSampler: sampler;
-@group(0) @binding(2) var environmentTexture: texture_2d<f32>;
-@group(0) @binding(3) var environmentIrradianceTexture: texture_2d<f32>;
+@group(0) @binding(2) var environmentTexture: texture_cube<f32>;
+@group(0) @binding(3) var environmentIrradianceTexture: texture_cube<f32>;
 
 @group(1) @binding(0) var<uniform> modelUniforms: ModelUniforms;
 @group(1) @binding(1) var textureSampler: sampler;
@@ -233,15 +233,8 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
     // Environment lighting
     {
-        // Convert the direction vector to spherical coordinates
-        let theta = -acos(in.normalWorld.y); // Polar angle
-        let phi = atan2(in.normalWorld.z, in.normalWorld.x); // Azimuthal angle
-
-        // Convert to UV coordinates
-        let iblUv = vec2f(phi / (2.0 * pi), 1.0 - theta / pi);
-
         // Sample the irradiance texture
-        let irrad = textureSample(environmentIrradianceTexture, environmentSampler, iblUv).rgb;
+        let irrad = textureSample(environmentIrradianceTexture, environmentSampler, in.normalWorld).rgb;
         diffuse += irrad * BRDFLambertian(materialInfo.f0, materialInfo.f90, materialInfo.cDiffuse, 1.0, 1.0);
     }
 

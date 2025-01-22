@@ -39,12 +39,12 @@ namespace
 
 template <typename ComponentType>
 void WriteMipMaps(wgpu::Device device, wgpu::Texture texture, wgpu::Extent3D textureSize, uint32_t mipLevelCount,
-                  const ComponentType *pixelData)
+                  uint32_t layer, const ComponentType *pixelData)
 {
     // Arguments specifying which part of the texture to upload to
     wgpu::ImageCopyTexture destination;
     destination.texture = texture;
-    destination.origin = {0, 0, 0};
+    destination.origin = {0, 0, layer};
     destination.aspect = wgpu::TextureAspect::All;
 
     // Arguments specifying how the C++ pixel memory is laid out
@@ -139,7 +139,7 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, wgpu::Te
     texture = device.CreateTexture(&textureDescriptor);
 
     // Generate mipmaps
-    WriteMipMaps(device, texture, textureDescriptor.size, mipLevelCount, data);
+    WriteMipMaps(device, texture, textureDescriptor.size, mipLevelCount, 0, data);
 
     // Create a texture view covering all mip levels
     wgpu::TextureViewDescriptor viewDescriptor{};
@@ -147,6 +147,45 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, wgpu::Te
     viewDescriptor.dimension = wgpu::TextureViewDimension::e2D;
     viewDescriptor.mipLevelCount = mipLevelCount;
     viewDescriptor.arrayLayerCount = 1;
+
+    textureView = texture.CreateView(&viewDescriptor);
+}
+
+template <typename TextureInfo>
+void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, wgpu::Texture &texture,
+                       wgpu::TextureView &textureView)
+{
+
+    uint32_t width = textureInfo->m_width;
+    uint32_t height = textureInfo->m_height;
+
+    // Compute the number of mip levels
+    uint32_t mipLevelCount = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+
+    // Create a WebGPU texture descriptor with mipmapping enabled
+    wgpu::TextureDescriptor textureDescriptor{};
+    textureDescriptor.size = {width, height, 6};
+    textureDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    textureDescriptor.usage =
+        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::RenderAttachment;
+    textureDescriptor.mipLevelCount = mipLevelCount;
+
+    texture = device.CreateTexture(&textureDescriptor);
+
+    // Generate mipmaps
+    for (uint32_t face = 0; face < 6; ++face)
+    {
+        const uint8_t *data = textureInfo->m_data[face].data();
+        wgpu::Extent3D textureSize = {width, height, 1};
+        WriteMipMaps(device, texture, textureSize, mipLevelCount, face, data);
+    }
+
+    // Create a texture view covering all mip levels
+    wgpu::TextureViewDescriptor viewDescriptor{};
+    viewDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    viewDescriptor.dimension = wgpu::TextureViewDimension::Cube;
+    viewDescriptor.mipLevelCount = mipLevelCount;
+    viewDescriptor.arrayLayerCount = 6;
 
     textureView = texture.CreateView(&viewDescriptor);
 }
@@ -363,9 +402,9 @@ void Renderer::CreateUniformBuffers()
 void Renderer::CreateTexturesAndSamplers()
 {
     // Create the environment textures
-    CreateTexture(&m_environment->GetBackgroundTexture(), m_device, m_environmentTexture, m_environmentTextureView);
-    CreateTexture(&m_environment->GetIrradianceTexture(), m_device, m_environmentIrradianceTexture,
-                  m_environmentIrradianceTextureView);
+    CreateTextureCube(&m_environment->GetBackgroundTexture(), m_device, m_environmentTexture, m_environmentTextureView);
+    CreateTextureCube(&m_environment->GetIrradianceTexture(), m_device, m_environmentIrradianceTexture,
+                      m_environmentIrradianceTextureView);
 
     // Create a sampler for the environment texture
     wgpu::SamplerDescriptor samplerDescriptor{};
@@ -437,7 +476,7 @@ void Renderer::CreateGlobalBindGroup()
             .binding = 2,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .viewDimension = wgpu::TextureViewDimension::Cube,
                         .multisampled = false},
         },
         {
@@ -445,7 +484,7 @@ void Renderer::CreateGlobalBindGroup()
             .binding = 3,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .viewDimension = wgpu::TextureViewDimension::Cube,
                         .multisampled = false},
         },
     };

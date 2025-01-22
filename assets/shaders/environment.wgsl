@@ -27,8 +27,8 @@ struct VertexOutput {
 
 @group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
 @group(0) @binding(1) var environmentSampler: sampler;
-@group(0) @binding(2) var environmentTexture: texture_2d<f32>;
-@group(0) @binding(3) var environmentIrradianceTexture: texture_2d<f32>;
+@group(0) @binding(2) var environmentTexture: texture_cube<f32>;
+@group(0) @binding(3) var environmentIrradianceTexture: texture_cube<f32>;
 
 
 //---------------------------------------------------------------------
@@ -72,17 +72,10 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
     );
 
     // Transform the direction vector from world space to camera space
-    dir = invRotMatrix * dir;
-
-    // Convert the direction vector to spherical coordinates
-    let theta = -acos(dir.y); // Polar angle
-    let phi = atan2(dir.z, dir.x); // Azimuthal angle
-
-    // Convert to UV coordinates
-    var iblUv = vec2f(phi / (2.0 * pi), 1.0 - theta / pi);
+    dir = normalize(invRotMatrix * dir);
 
     // Sample the environment texture
-    let iblSample = textureSample(environmentTexture, environmentSampler, iblUv).rgb;
+    let iblSample = textureSample(environmentTexture, environmentSampler, dir).rgb;
 
     return vec4f(iblSample, 1.0);
 }

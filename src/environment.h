@@ -15,11 +15,11 @@ class Environment
     // Types
     struct Texture
     {
-        std::string m_name;          // Name of the texture
-        uint32_t m_width = 0;        // Width of the texture
-        uint32_t m_height = 0;       // Height of the texture
-        uint32_t m_components = 0;   // Components per pixel (e.g., 3 = RGB, 4 = RGBA)
-        std::vector<uint8_t> m_data; // Raw pixel data
+        std::string m_name;             // Name of the texture
+        uint32_t m_width = 0;           // Width of the texture
+        uint32_t m_height = 0;          // Height of the texture
+        uint32_t m_components = 0;      // Components per pixel (e.g., 3 = RGB, 4 = RGBA)
+        std::vector<uint8_t> m_data[6]; // Raw pixel data, stored per face
     };
 
     // Constructor

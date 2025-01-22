@@ -1,7 +1,7 @@
 // Standard Library Headers
+#include <filesystem>
 #include <iostream>
 #include <string>
-#include <filesystem>
 
 // Third-Party Library Headers
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -20,27 +20,123 @@
 
 namespace
 {
-    void LoadTexture(const std::string &filename, Environment::Texture &texture)
-    {
-        // Load the texture
-        int width, height, components;
-        uint8_t *data = stbi_load(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
-        if (data)
-        {
-            components = 4; // force 4 channels
-            texture.m_width = width;
-            texture.m_height = height;
-            texture.m_components = components;
-            texture.m_data = std::vector<uint8_t>(data, data + (width * height * components));
-            stbi_image_free(data);
 
-            std::cout << "Loaded environment texture: " << filename << " (" << width << "x" << height << ")" << std::endl;
-        }
-        else
+void LoadTexture(const std::string &filename, Environment::Texture &texture)
+{
+    // Load the texture
+    int width, height, components;
+    uint8_t *data = stbi_load(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
+    if (!data)
+    {
+        std::cerr << "Failed to load image: " << filename << std::endl;
+        return;
+    }
+
+    std::cout << "Loaded environment texture: " << filename << " (" << width << "x" << height << ")" << std::endl;
+
+    // Force 4 channels
+    components = 4;
+
+    // Resample to cubemap faces
+    const int cubemapSize = height; // Size of each cubemap face
+    texture.m_width = cubemapSize;
+    texture.m_height = cubemapSize;
+    texture.m_components = components;
+
+    const glm::vec3 faceDirs[6] = {
+        {1.0f, 0.0f, 0.0f},  // +X
+        {-1.0f, 0.0f, 0.0f}, // -X
+        {0.0f, 1.0f, 0.0f},  // +Y
+        {0.0f, -1.0f, 0.0f}, // -Y
+        {0.0f, 0.0f, 1.0f},  // +Z
+        {0.0f, 0.0f, -1.0f}  // -Z
+    };
+
+    const glm::vec3 upVectors[6] = {
+        {0.0f, -1.0f, 0.0f}, // +X
+        {0.0f, -1.0f, 0.0f}, // -X
+        {0.0f, 0.0f, 1.0f},  // +Y
+        {0.0f, 0.0f, -1.0f}, // -Y
+        {0.0f, -1.0f, 0.0f}, // +Z
+        {0.0f, -1.0f, 0.0f}  // -Z
+    };
+
+    const glm::vec3 rightVectors[6] = {
+        {0.0f, 0.0f, -1.0f}, // +X
+        {0.0f, 0.0f, 1.0f},  // -X
+        {1.0f, 0.0f, 0.0f},  // +Y
+        {1.0f, 0.0f, 0.0f},  // -Y
+        {1.0f, 0.0f, 0.0f},  // +Z
+        {-1.0f, 0.0f, 0.0f}  // -Z
+    };
+
+    for (int face = 0; face < 6; ++face)
+    {
+        std::vector<uint8_t> &cubemapFace = texture.m_data[face];
+        cubemapFace.resize(cubemapSize * cubemapSize * components);
+
+        glm::vec3 faceDir = faceDirs[face];
+        glm::vec3 up = upVectors[face];
+        glm::vec3 right = rightVectors[face];
+
+        for (int y = 0; y < cubemapSize; ++y)
         {
-            std::cerr << "Failed to load image: " << filename << std::endl;
+            for (int x = 0; x < cubemapSize; ++x)
+            {
+                // Compute the normalized direction vector for this cubemap face pixel
+                float u = (x + 0.5f) / cubemapSize * 2.0f - 1.0f; // [-1, 1]
+                float v = (y + 0.5f) / cubemapSize * 2.0f - 1.0f; // [-1, 1]
+                glm::vec3 dir = glm::normalize(faceDir + u * right + v * up);
+
+                // Convert direction to spherical coordinates
+                float theta = acos(dir.y);       // Polar angle [0, π]
+                float phi = atan2(dir.z, dir.x); // Azimuthal angle [-π, π]
+                if (phi < 0.0f) {
+                    phi += glm::two_pi<float>(); // Normalize to [0, 2π]
+                }
+
+                // Convert spherical coordinates to equirectangular UV
+                float uEquirect = phi / glm::two_pi<float>();
+                float vEquirect = theta / glm::pi<float>();
+
+                // Convert UV to floating-point pixel coordinates
+                float srcXF = uEquirect * (width - 1);
+                float srcYF = vEquirect * (height - 1);
+
+                // Calculate the integer and fractional parts
+                int x0 = static_cast<int>(floor(srcXF));
+                int x1 = (x0 + 1) % width; // Wrap horizontally
+                int y0 = static_cast<int>(floor(srcYF));
+                int y1 = std::min(y0 + 1, height - 1); // Clamp vertically
+
+                float fx = srcXF - x0; // Fractional part in X
+                float fy = srcYF - y0; // Fractional part in Y
+
+                // Fetch the four nearest texels
+                int index00 = (y0 * width + x0) * components; // Top-left
+                int index10 = (y0 * width + x1) * components; // Top-right (wrapped horizontally)
+                int index01 = (y1 * width + x0) * components; // Bottom-left
+                int index11 = (y1 * width + x1) * components; // Bottom-right (wrapped horizontally)
+
+                // Interpolate pixel values
+                int dstIndex = (y * cubemapSize + x) * components;
+                for (int c = 0; c < components; ++c)
+                {
+                    float value = (1 - fx) * (1 - fy) * data[index00 + c] + // Top-left
+                                  fx * (1 - fy) * data[index10 + c] +       // Top-right
+                                  (1 - fx) * fy * data[index01 + c] +       // Bottom-left
+                                  fx * fy * data[index11 + c];              // Bottom-right
+
+                    cubemapFace[dstIndex + c] = static_cast<uint8_t>(value);
+                }
+            }
         }
     }
+
+    // Free the image data
+    stbi_image_free(data);
+}
+
 } // namespace
 
 //----------------------------------------------------------------------
@@ -52,7 +148,7 @@ void Environment::Load(const std::string &filename)
 
     // Extract the base name, extension, and parent path
     std::filesystem::path filePath(filename);
-    std::string baseName = filePath.stem().string();  // Extracts the filename without extension
+    std::string baseName = filePath.stem().string();       // Extracts the filename without extension
     std::string extension = filePath.extension().string(); // Extracts the original extension
     std::string parentPath = filePath.has_parent_path() ? filePath.parent_path().string() + "/" : "";
     std::string irradianceFilename = parentPath + baseName + "_irradiance" + extension;
