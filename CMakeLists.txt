@@ -19,6 +19,7 @@ add_executable(app
   src/application.cpp
   src/camera.cpp
   src/environment.cpp
+  src/float16.cpp
   src/main.cpp
   src/model.cpp
   src/orbit_controls.cpp

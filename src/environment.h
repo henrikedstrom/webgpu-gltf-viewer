@@ -8,6 +8,9 @@
 // Third-Party Library Headers
 #include <glm/glm.hpp>
 
+// Project Headers
+#include "float16.h"
+
 // Environment Class
 class Environment
 {
@@ -19,7 +22,7 @@ class Environment
         uint32_t m_width = 0;           // Width of the texture
         uint32_t m_height = 0;          // Height of the texture
         uint32_t m_components = 0;      // Components per pixel (e.g., 3 = RGB, 4 = RGBA)
-        std::vector<uint8_t> m_data[6]; // Raw pixel data, stored per face
+        std::vector<Float16> m_data[6]; // Raw pixel data, stored per face
     };
 
     // Constructor

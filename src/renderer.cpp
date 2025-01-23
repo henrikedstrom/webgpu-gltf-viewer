@@ -165,7 +165,7 @@ void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, wgpu
     // Create a WebGPU texture descriptor with mipmapping enabled
     wgpu::TextureDescriptor textureDescriptor{};
     textureDescriptor.size = {width, height, 6};
-    textureDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    textureDescriptor.format = wgpu::TextureFormat::RGBA16Float;
     textureDescriptor.usage =
         wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::RenderAttachment;
     textureDescriptor.mipLevelCount = mipLevelCount;
@@ -175,14 +175,14 @@ void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, wgpu
     // Generate mipmaps
     for (uint32_t face = 0; face < 6; ++face)
     {
-        const uint8_t *data = textureInfo->m_data[face].data();
+        const Float16 *data = textureInfo->m_data[face].data();
         wgpu::Extent3D textureSize = {width, height, 1};
         WriteMipMaps(device, texture, textureSize, mipLevelCount, face, data);
     }
 
     // Create a texture view covering all mip levels
     wgpu::TextureViewDescriptor viewDescriptor{};
-    viewDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    viewDescriptor.format = wgpu::TextureFormat::RGBA16Float;
     viewDescriptor.dimension = wgpu::TextureViewDimension::Cube;
     viewDescriptor.mipLevelCount = mipLevelCount;
     viewDescriptor.arrayLayerCount = 6;

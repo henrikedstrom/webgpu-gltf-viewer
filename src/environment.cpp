@@ -1,5 +1,6 @@
 // Standard Library Headers
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <string>
 
@@ -25,10 +26,15 @@ void LoadTexture(const std::string &filename, Environment::Texture &texture)
 {
     // Load the texture
     int width, height, components;
-    uint8_t *data = stbi_load(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
+    float *data = stbi_loadf(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
     if (!data)
     {
         std::cerr << "Failed to load image: " << filename << std::endl;
+        return;
+    }
+    if (width != 2 * height) {
+        std::cerr << "Error: Texture must have a 2:1 aspect ratio. Received: " << width << "x" << height << std::endl;
+        stbi_image_free(data);
         return;
     }
 
@@ -72,7 +78,7 @@ void LoadTexture(const std::string &filename, Environment::Texture &texture)
 
     for (int face = 0; face < 6; ++face)
     {
-        std::vector<uint8_t> &cubemapFace = texture.m_data[face];
+        std::vector<Float16> &cubemapFace = texture.m_data[face];
         cubemapFace.resize(cubemapSize * cubemapSize * components);
 
         glm::vec3 faceDir = faceDirs[face];
@@ -127,7 +133,7 @@ void LoadTexture(const std::string &filename, Environment::Texture &texture)
                                   (1 - fx) * fy * data[index01 + c] +       // Bottom-left
                                   fx * fy * data[index11 + c];              // Bottom-right
 
-                    cubemapFace[dstIndex + c] = static_cast<uint8_t>(value);
+                    cubemapFace[dstIndex + c] = Float16(value);
                 }
             }
         }

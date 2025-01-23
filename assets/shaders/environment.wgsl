@@ -23,6 +23,46 @@ struct VertexOutput {
 
 
 //---------------------------------------------------------------------
+// Utility Functions
+
+fn toneMapPBRNeutral(colorIn: vec3f) -> vec3f {
+    let startCompression: f32 = 0.8 - 0.04;
+    let desaturation: f32 = 0.15;
+
+    let x: f32 = min(colorIn.r, min(colorIn.g, colorIn.b));
+    let offset: f32 = select(0.04, x - 6.25 * x * x, x < 0.08);
+    var color = colorIn - offset;
+
+    let peak: f32 = max(color.r, max(color.g, color.b));
+    if (peak < startCompression) {
+        return color;
+    }
+
+    let d: f32 = 1.0 - startCompression;
+    let newPeak: f32 = 1.0 - d * d / (peak + d - startCompression);
+    color = color * (newPeak / peak);
+
+    let g: f32 = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
+    return mix(color, newPeak * vec3f(1.0, 1.0, 1.0), g);
+}
+
+fn toneMap(colorIn: vec3f) -> vec3f {
+  const gamma = 2.2;
+  const invGamma = 1.0 / gamma;
+
+  const exposure = 1.0;
+
+  var color = colorIn * exposure;
+
+  color = toneMapPBRNeutral(color);
+
+  // Linear to sRGB
+  color = pow(color, vec3f(invGamma));
+
+  return color;
+}
+
+//---------------------------------------------------------------------
 // Bind Groups
 
 @group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
@@ -77,5 +117,8 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
     // Sample the environment texture
     let iblSample = textureSample(environmentTexture, environmentSampler, dir).rgb;
 
-    return vec4f(iblSample, 1.0);
+    // Tonemapping and gamma correction
+    let color = toneMap(iblSample);
+
+    return vec4f(color, 1.0);
 }
