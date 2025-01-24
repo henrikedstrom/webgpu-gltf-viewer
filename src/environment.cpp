@@ -1,4 +1,5 @@
 // Standard Library Headers
+#include <chrono>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -24,6 +25,8 @@ namespace
 
 void LoadTexture(const std::string &filename, Environment::Texture &texture)
 {
+    auto start = std::chrono::high_resolution_clock::now();
+
     // Load the texture
     int width, height, components;
     float *data = stbi_loadf(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
@@ -141,7 +144,172 @@ void LoadTexture(const std::string &filename, Environment::Texture &texture)
 
     // Free the image data
     stbi_image_free(data);
+
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Resampled environment texture (" << width << "x" << height << " -> " << cubemapSize << "x"
+              << cubemapSize << "x6) in " << elapsed.count() << " seconds" << std::endl;
 }
+
+inline float RadicalInverse_VdC(unsigned int bits)
+{
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10f; // Divide by 2^32
+}
+
+inline glm::vec2 Hammersley(uint32_t i, uint32_t N)
+{
+    return glm::vec2(float(i) / float(N), RadicalInverse_VdC(i));
+}
+
+glm::vec3 ImportanceSampleHemisphere(uint32_t sampleIndex, uint32_t sampleCount, const glm::vec3 &normal)
+{
+    glm::vec2 xi = Hammersley(sampleIndex, sampleCount);
+
+    float phi = 2.0f * glm::pi<float>() * xi.x;
+    float cosTheta = sqrt(1.0f - xi.y);
+    float sinTheta = sqrt(xi.y);
+
+    // Convert spherical coordinates to Cartesian
+    glm::vec3 tangent = glm::normalize(glm::cross(normal, glm::vec3(0.0f, 1.0f, 0.0f)));
+    glm::vec3 bitangent = glm::cross(normal, tangent);
+    glm::vec3 sampleDir = cosTheta * normal + sinTheta * (cos(phi) * tangent + sin(phi) * bitangent);
+
+    return glm::normalize(sampleDir);
+}
+
+glm::vec3 SampleEnvironment(const glm::vec3 &dir, const Environment::Texture &environmentTexture)
+{
+    glm::vec3 absDir = glm::abs(dir);
+    int face;
+    glm::vec2 uv;
+
+    // Determine the target cube map face and UV coordinates
+    if (absDir.x >= absDir.y && absDir.x >= absDir.z)
+    {
+        face = (dir.x > 0.0f) ? 0 : 1; // +X or -X
+        uv = glm::vec2(dir.z, -dir.y) / absDir.x;
+    }
+    else if (absDir.y >= absDir.x && absDir.y >= absDir.z)
+    {
+        face = (dir.y > 0.0f) ? 2 : 3; // +Y or -Y
+        uv = glm::vec2(dir.x, dir.z) / absDir.y;
+    }
+    else
+    {
+        face = (dir.z > 0.0f) ? 4 : 5; // +Z or -Z
+        uv = glm::vec2(-dir.x, -dir.y) / absDir.z;
+    }
+
+    // Convert from [-1, 1] to [0, 1]
+    uv = uv * 0.5f + 0.5f;
+
+    // Map UV to pixel coordinates
+    int x = glm::clamp(int(uv.x * (environmentTexture.m_width - 1)), 0, int(environmentTexture.m_width - 1));
+    int y = glm::clamp(int(uv.y * (environmentTexture.m_height - 1)), 0, int(environmentTexture.m_height - 1));
+    int index = (y * environmentTexture.m_width + x) * environmentTexture.m_components;
+
+    assert(face >= 0 && face < 6);
+    assert(index >= 0 && index < environmentTexture.m_data[face].size());
+
+    // Sample the color from the correct face
+    glm::vec3 color(
+        environmentTexture.m_data[face][index],
+        environmentTexture.m_data[face][index + 1],
+        environmentTexture.m_data[face][index + 2]);
+
+    return color;
+}
+
+
+void GenerateIrradianceTexture(const Environment::Texture &environmentTexture, Environment::Texture &irradianceTexture)
+{
+    auto start = std::chrono::high_resolution_clock::now();
+
+    const int cubemapSize = 64;
+    irradianceTexture.m_width = cubemapSize;
+    irradianceTexture.m_height = cubemapSize;
+    irradianceTexture.m_components = environmentTexture.m_components;
+
+    const glm::vec3 faceDirs[6] = {
+        {1.0f, 0.0f, 0.0f},  // +X
+        {-1.0f, 0.0f, 0.0f}, // -X
+        {0.0f, 1.0f, 0.0f},  // +Y
+        {0.0f, -1.0f, 0.0f}, // -Y
+        {0.0f, 0.0f, 1.0f},  // +Z
+        {0.0f, 0.0f, -1.0f}  // -Z
+    };
+
+    const glm::vec3 upVectors[6] = {
+        {0.0f, -1.0f, 0.0f}, // +X
+        {0.0f, -1.0f, 0.0f}, // -X
+        {0.0f, 0.0f, 1.0f},  // +Y
+        {0.0f, 0.0f, -1.0f}, // -Y
+        {0.0f, -1.0f, 0.0f}, // +Z
+        {0.0f, -1.0f, 0.0f}  // -Z
+    };
+
+    const glm::vec3 rightVectors[6] = {
+        {0.0f, 0.0f, -1.0f}, // +X
+        {0.0f, 0.0f, 1.0f},  // -X
+        {1.0f, 0.0f, 0.0f},  // +Y
+        {1.0f, 0.0f, 0.0f},  // -Y
+        {1.0f, 0.0f, 0.0f},  // +Z
+        {-1.0f, 0.0f, 0.0f}  // -Z
+    };
+
+    for (int face = 0; face < 6; ++face)
+    {
+        std::vector<Float16> &cubemapFace = irradianceTexture.m_data[face];
+        cubemapFace.resize(cubemapSize * cubemapSize * environmentTexture.m_components);
+
+        glm::vec3 faceDir = faceDirs[face];
+        glm::vec3 up = upVectors[face];
+        glm::vec3 right = rightVectors[face];
+
+        for (int y = 0; y < cubemapSize; ++y)
+        {
+            for (int x = 0; x < cubemapSize; ++x)
+            {
+                // Compute the normalized direction vector for this cubemap face pixel
+                float u = (x + 0.5f) / cubemapSize * 2.0f - 1.0f; // [-1, 1]
+                float v = (y + 0.5f) / cubemapSize * 2.0f - 1.0f; // [-1, 1]
+                glm::vec3 dir = glm::normalize(faceDir + u * right + v * up);
+
+                // Integrate incoming radiance from the environment
+                glm::vec3 irradiance(0.0f);
+                const int sampleCount = environmentTexture.m_width; // Number of samples for integration
+                for (int i = 0; i < sampleCount; ++i)
+                {
+                    glm::vec3 sampleDir = ImportanceSampleHemisphere(i, sampleCount, dir);
+                    glm::vec3 sampleColor = SampleEnvironment(sampleDir, environmentTexture);
+                    irradiance += sampleColor * glm::dot(sampleDir, dir); // Weight by cosine
+                }
+                irradiance /= float(sampleCount);
+
+                // Store the irradiance result
+                int dstIndex = (y * cubemapSize + x) * environmentTexture.m_components;
+                assert(dstIndex + environmentTexture.m_components <= int(cubemapFace.size()));
+                for (uint32_t c = 0; c < 3; ++c)
+                {
+                    irradianceTexture.m_data[face][dstIndex + c] = Float16(irradiance[c]);
+                }
+                irradianceTexture.m_data[face][dstIndex + 3] = Float16(1.0f);
+            }
+        }
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Generated irradiance texture (" << cubemapSize << "x" << cubemapSize
+              << "x6) in " << elapsed.count() << " seconds" << std::endl;
+}
+
 
 } // namespace
 
@@ -152,18 +320,11 @@ void Environment::Load(const std::string &filename)
 {
     m_transform = glm::mat4(1.0f); // Reset the environment transformation matrix
 
-    // Extract the base name, extension, and parent path
-    std::filesystem::path filePath(filename);
-    std::string baseName = filePath.stem().string();       // Extracts the filename without extension
-    std::string extension = filePath.extension().string(); // Extracts the original extension
-    std::string parentPath = filePath.has_parent_path() ? filePath.parent_path().string() + "/" : "";
-    std::string irradianceFilename = parentPath + baseName + "_irradiance" + extension;
-
     // Load the background texture
     LoadTexture(filename, m_backgroundTexture);
 
     // Load the irradiance texture
-    LoadTexture(irradianceFilename, m_irradianceTexture);
+    GenerateIrradianceTexture(m_backgroundTexture, m_irradianceTexture);
 }
 
 void Environment::UpdateRotation(float rotationAngle)
