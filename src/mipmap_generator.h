@@ -33,14 +33,17 @@ class MipmapGenerator
     void initUniformBuffers();
 
     // Helper functions
-    wgpu::ComputePipeline createComputePipeline(const std::string &shaderPath, wgpu::BindGroupLayout layout);
+    wgpu::ComputePipeline createComputePipeline(const std::string &shaderPath,
+                                                const std::vector<wgpu::BindGroupLayout> &layouts);
 
     // WebGPU objects (initialized by constructor)
     wgpu::Device m_device;
     wgpu::PipelineLayout m_pipelineLayout;
     wgpu::BindGroupLayout m_bindGroupLayout2D;
     wgpu::BindGroupLayout m_bindGroupLayoutCube;
+    wgpu::BindGroupLayout m_bindGroupLayoutFace;
     wgpu::ComputePipeline m_pipeline2D;
     wgpu::ComputePipeline m_pipelineCube;
-    wgpu::Buffer m_uniformBuffer;
+    wgpu::Buffer m_uniformBuffers[6];
+    wgpu::BindGroup m_faceBindGroups[6];
 };
