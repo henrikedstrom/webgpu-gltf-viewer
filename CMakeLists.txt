@@ -14,17 +14,37 @@ FetchContent_Declare(
 # Fetch GLM
 FetchContent_MakeAvailable(glm)
 
-# Add executable and source files
-add_executable(app
+# Source files
+set(SOURCE_FILES
   src/application.cpp
   src/camera.cpp
   src/environment.cpp
   src/float16.cpp
   src/main.cpp
+  src/mipmap_generator.cpp
   src/model.cpp
   src/orbit_controls.cpp
   src/renderer.cpp
 )
+
+# Header files
+set(HEADER_FILES
+  src/application.h
+  src/camera.h
+  src/environment.h
+  src/float16.h
+  src/mipmap_generator.h
+  src/model.h
+  src/orbit_controls.h
+  src/renderer.h
+)
+
+# Add executable
+add_executable(app ${SOURCE_FILES} ${HEADER_FILES})
+
+# Organize files in IDEs (e.g., Visual Studio, Xcode)
+source_group("Source Files" FILES ${SOURCE_FILES})
+source_group("Header Files" FILES ${HEADER_FILES})
 
 # Include directories for third-party libraries and project headers
 target_include_directories(app PRIVATE

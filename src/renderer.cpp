@@ -27,6 +27,7 @@
 #include "application.h"
 #include "camera.h"
 #include "environment.h"
+#include "mipmap_generator.h"
 #include "model.h"
 #include "orbit_controls.h"
 #include "renderer.h"
@@ -37,80 +38,9 @@
 namespace
 {
 
-template <typename ComponentType>
-void WriteMipMaps(wgpu::Device device, wgpu::Texture texture, wgpu::Extent3D textureSize, uint32_t mipLevelCount,
-                  uint32_t layer, const ComponentType *pixelData)
-{
-    // Arguments specifying which part of the texture to upload to
-    wgpu::ImageCopyTexture destination;
-    destination.texture = texture;
-    destination.origin = {0, 0, layer};
-    destination.aspect = wgpu::TextureAspect::All;
-
-    // Arguments specifying how the C++ pixel memory is laid out
-    wgpu::TextureDataLayout source;
-    source.offset = 0;
-
-    // Create image data
-    wgpu::Extent3D mipLevelSize = textureSize;
-    std::vector<ComponentType> previousLevelPixels;
-    wgpu::Extent3D previousMipLevelSize;
-
-    for (uint32_t level = 0; level < mipLevelCount; ++level)
-    {
-        // Pixel data for the current level
-        std::vector<ComponentType> pixels(4 * mipLevelSize.width * mipLevelSize.height);
-
-        if (level == 0)
-        {
-            // Copy the original data into the current level
-            memcpy(pixels.data(), pixelData, pixels.size() * sizeof(ComponentType));
-        }
-        else
-        {
-            // Create mip level data
-            for (uint32_t i = 0; i < mipLevelSize.width; ++i)
-            {
-                for (uint32_t j = 0; j < mipLevelSize.height; ++j)
-                {
-                    ComponentType *p = &pixels[4 * (j * mipLevelSize.width + i)];
-                    // Get the corresponding 4 pixels from the previous level
-                    ComponentType *p00 =
-                        &previousLevelPixels[4 * ((2 * j + 0) * previousMipLevelSize.width + (2 * i + 0))];
-                    ComponentType *p01 =
-                        &previousLevelPixels[4 * ((2 * j + 0) * previousMipLevelSize.width + (2 * i + 1))];
-                    ComponentType *p10 =
-                        &previousLevelPixels[4 * ((2 * j + 1) * previousMipLevelSize.width + (2 * i + 0))];
-                    ComponentType *p11 =
-                        &previousLevelPixels[4 * ((2 * j + 1) * previousMipLevelSize.width + (2 * i + 1))];
-
-                    // Average the 4 pixels
-                    p[0] = (p00[0] + p01[0] + p10[0] + p11[0]) / static_cast<ComponentType>(4);
-                    p[1] = (p00[1] + p01[1] + p10[1] + p11[1]) / static_cast<ComponentType>(4);
-                    p[2] = (p00[2] + p01[2] + p10[2] + p11[2]) / static_cast<ComponentType>(4);
-                    p[3] = (p00[3] + p01[3] + p10[3] + p11[3]) / static_cast<ComponentType>(4);
-                }
-            }
-        }
-
-        // Upload data to the GPU texture
-        destination.mipLevel = level;
-        source.bytesPerRow = 4 * mipLevelSize.width * sizeof(ComponentType);
-        source.rowsPerImage = mipLevelSize.height;
-
-        device.GetQueue().WriteTexture(&destination, pixels.data(), pixels.size() * sizeof(ComponentType), &source,
-                                       &mipLevelSize);
-
-        previousLevelPixels = std::move(pixels);
-        previousMipLevelSize = mipLevelSize;
-        mipLevelSize.width /= 2;
-        mipLevelSize.height /= 2;
-    }
-}
-
 template <typename TextureInfo>
-void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, wgpu::Texture &texture,
-                   wgpu::TextureView &textureView)
+void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, MipmapGenerator &mipmapGenerator,
+                   wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
     // Default to 1x1 black texture (in case texture is missing)
     const uint8_t blackPixel[] = {0, 0, 0, 255};
@@ -132,14 +62,30 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, wgpu::Te
     wgpu::TextureDescriptor textureDescriptor{};
     textureDescriptor.size = {width, height, 1};
     textureDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
-    textureDescriptor.usage =
-        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::RenderAttachment;
+    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
+                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc |
+                              wgpu::TextureUsage::RenderAttachment;
     textureDescriptor.mipLevelCount = mipLevelCount;
 
     texture = device.CreateTexture(&textureDescriptor);
 
+    // Upload the texture data
+    wgpu::ImageCopyTexture imageCopyTexture{};
+    imageCopyTexture.texture = texture;
+    imageCopyTexture.mipLevel = 0;
+    imageCopyTexture.origin = {0, 0, 0};
+    imageCopyTexture.aspect = wgpu::TextureAspect::All;
+
+    wgpu::TextureDataLayout source;
+    source.offset = 0;
+    source.bytesPerRow = 4 * width * sizeof(uint8_t);
+    source.rowsPerImage = height;
+
+    device.GetQueue().WriteTexture(&imageCopyTexture, data, 4 * width * height * sizeof(uint8_t), &source,
+                                   &textureDescriptor.size);
+
     // Generate mipmaps
-    WriteMipMaps(device, texture, textureDescriptor.size, mipLevelCount, 0, data);
+    mipmapGenerator.GenerateMipmaps(texture, textureDescriptor.size, false);
 
     // Create a texture view covering all mip levels
     wgpu::TextureViewDescriptor viewDescriptor{};
@@ -152,8 +98,8 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, wgpu::Te
 }
 
 template <typename TextureInfo>
-void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, wgpu::Texture &texture,
-                       wgpu::TextureView &textureView)
+void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, MipmapGenerator &mipmapGenerator,
+                       wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
 
     uint32_t width = textureInfo->m_width;
@@ -166,19 +112,37 @@ void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, wgpu
     wgpu::TextureDescriptor textureDescriptor{};
     textureDescriptor.size = {width, height, 6};
     textureDescriptor.format = wgpu::TextureFormat::RGBA16Float;
-    textureDescriptor.usage =
-        wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::RenderAttachment;
+    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
+                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc |
+                              wgpu::TextureUsage::RenderAttachment;
     textureDescriptor.mipLevelCount = mipLevelCount;
 
     texture = device.CreateTexture(&textureDescriptor);
 
-    // Generate mipmaps
+    // Upload the texture data
     for (uint32_t face = 0; face < 6; ++face)
     {
         const Float16 *data = textureInfo->m_data[face].data();
         wgpu::Extent3D textureSize = {width, height, 1};
-        WriteMipMaps(device, texture, textureSize, mipLevelCount, face, data);
+
+        wgpu::ImageCopyTexture imageCopyTexture{};
+        imageCopyTexture.texture = texture;
+        imageCopyTexture.mipLevel = 0;
+        imageCopyTexture.origin = {0, 0, face};
+        imageCopyTexture.aspect = wgpu::TextureAspect::All;
+
+        wgpu::TextureDataLayout source;
+        source.offset = 0;
+        source.bytesPerRow = 4 * width * sizeof(Float16);
+        source.rowsPerImage = height;
+
+        wgpu::Extent3D faceSize = {width, height, 1};
+        device.GetQueue().WriteTexture(&imageCopyTexture, data, 4 * width * height * sizeof(Float16), &source,
+                                       &faceSize);
     }
+
+    // Generate mipmaps
+    mipmapGenerator.GenerateMipmaps(texture, textureDescriptor.size, true);
 
     // Create a texture view covering all mip levels
     wgpu::TextureViewDescriptor viewDescriptor{};
@@ -401,9 +365,12 @@ void Renderer::CreateUniformBuffers()
 
 void Renderer::CreateTexturesAndSamplers()
 {
+    MipmapGenerator mipmapGenerator(m_device);
+
     // Create the environment textures
-    CreateTextureCube(&m_environment->GetBackgroundTexture(), m_device, m_environmentTexture, m_environmentTextureView);
-    CreateTextureCube(&m_environment->GetIrradianceTexture(), m_device, m_environmentIrradianceTexture,
+    CreateTextureCube(&m_environment->GetBackgroundTexture(), m_device, mipmapGenerator, m_environmentTexture,
+                      m_environmentTextureView);
+    CreateTextureCube(&m_environment->GetIrradianceTexture(), m_device, mipmapGenerator, m_environmentIrradianceTexture,
                       m_environmentIrradianceTextureView);
 
     // Create a sampler for the environment texture
@@ -424,22 +391,23 @@ void Renderer::CreateTexturesAndSamplers()
         const Model::Material &material = m_model->GetMaterials().front();
 
         // Base Color Texture
-        CreateTexture(m_model->GetTexture(material.m_baseColorTexture), m_device, m_baseColorTexture,
+        CreateTexture(m_model->GetTexture(material.m_baseColorTexture), m_device, mipmapGenerator, m_baseColorTexture,
                       m_baseColorTextureView);
 
         // Metallic-Roughness
-        CreateTexture(m_model->GetTexture(material.m_metallicRoughnessTexture), m_device, m_metallicRoughnessTexture,
-                      m_metallicRoughnessTextureView);
+        CreateTexture(m_model->GetTexture(material.m_metallicRoughnessTexture), m_device, mipmapGenerator,
+                      m_metallicRoughnessTexture, m_metallicRoughnessTextureView);
 
         // Normal Texture
-        CreateTexture(m_model->GetTexture(material.m_normalTexture), m_device, m_normalTexture, m_normalTextureView);
+        CreateTexture(m_model->GetTexture(material.m_normalTexture), m_device, mipmapGenerator, m_normalTexture,
+                      m_normalTextureView);
 
         // Occlusion Texture
-        CreateTexture(m_model->GetTexture(material.m_occlusionTexture), m_device, m_occlusionTexture,
+        CreateTexture(m_model->GetTexture(material.m_occlusionTexture), m_device, mipmapGenerator, m_occlusionTexture,
                       m_occlusionTextureView);
 
         // Emissive Texture
-        CreateTexture(m_model->GetTexture(material.m_emissiveTexture), m_device, m_emissiveTexture,
+        CreateTexture(m_model->GetTexture(material.m_emissiveTexture), m_device, mipmapGenerator, m_emissiveTexture,
                       m_emissiveTextureView);
 
         // Create a sampler for model textures
