@@ -27,6 +27,7 @@
 #include "application.h"
 #include "camera.h"
 #include "environment.h"
+#include "environment_preprocessor.h"
 #include "mipmap_generator.h"
 #include "model.h"
 #include "orbit_controls.h"
@@ -37,6 +38,8 @@
 
 namespace
 {
+
+constexpr uint32_t kIrradianceMapSize = 64;
 
 template <typename TextureInfo>
 void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, MipmapGenerator &mipmapGenerator,
@@ -143,6 +146,35 @@ void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, Mipm
 
     // Generate mipmaps
     mipmapGenerator.GenerateMipmaps(texture, textureDescriptor.size, true);
+
+    // Create a texture view covering all mip levels
+    wgpu::TextureViewDescriptor viewDescriptor{};
+    viewDescriptor.format = wgpu::TextureFormat::RGBA16Float;
+    viewDescriptor.dimension = wgpu::TextureViewDimension::Cube;
+    viewDescriptor.mipLevelCount = mipLevelCount;
+    viewDescriptor.arrayLayerCount = 6;
+
+    textureView = texture.CreateView(&viewDescriptor);
+}
+
+void CreateIrradianceMap(wgpu::Device device, wgpu::Texture &texture, wgpu::TextureView &textureView)
+{
+    // Use fixed size for the irradiance map
+    constexpr uint32_t size = kIrradianceMapSize;
+
+    // Compute the number of mip levels
+    const uint32_t mipLevelCount = static_cast<uint32_t>(std::log2(size)) + 1;
+
+    // Create a WebGPU texture descriptor with mipmapping enabled
+    wgpu::TextureDescriptor textureDescriptor{};
+    textureDescriptor.size = {size, size, 6};
+    textureDescriptor.format = wgpu::TextureFormat::RGBA16Float;
+    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
+                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc |
+                              wgpu::TextureUsage::RenderAttachment;
+    textureDescriptor.mipLevelCount = mipLevelCount;
+
+    texture = device.CreateTexture(&textureDescriptor);
 
     // Create a texture view covering all mip levels
     wgpu::TextureViewDescriptor viewDescriptor{};
@@ -370,8 +402,12 @@ void Renderer::CreateTexturesAndSamplers()
     // Create the environment textures
     CreateTextureCube(&m_environment->GetBackgroundTexture(), m_device, mipmapGenerator, m_environmentTexture,
                       m_environmentTextureView);
-    CreateTextureCube(&m_environment->GetIrradianceTexture(), m_device, mipmapGenerator, m_environmentIrradianceTexture,
-                      m_environmentIrradianceTextureView);
+
+    // Create the environment irradiance map from the environment texture and generate mipmaps
+    CreateIrradianceMap(m_device, m_environmentIrradianceTexture, m_environmentIrradianceTextureView);
+    EnvironmentPreprocessor environmentPreprocessor(m_device);
+    environmentPreprocessor.GenerateIrradianceMap(m_environmentTexture, m_environmentIrradianceTexture);
+    mipmapGenerator.GenerateMipmaps(m_environmentIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, true);
 
     // Create a sampler for the environment texture
     wgpu::SamplerDescriptor samplerDescriptor{};

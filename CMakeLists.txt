@@ -19,6 +19,7 @@ set(SOURCE_FILES
   src/application.cpp
   src/camera.cpp
   src/environment.cpp
+  src/environment_preprocessor.cpp
   src/float16.cpp
   src/main.cpp
   src/mipmap_generator.cpp
@@ -32,6 +33,7 @@ set(HEADER_FILES
   src/application.h
   src/camera.h
   src/environment.h
+  src/environment_preprocessor.h
   src/float16.h
   src/mipmap_generator.h
   src/model.h

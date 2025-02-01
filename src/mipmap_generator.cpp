@@ -118,6 +118,21 @@ void MipmapGenerator::GenerateMipmaps(const wgpu::Texture &texture, wgpu::Extent
     queue.Submit(1, &commands);
 }
 
+void MipmapGenerator::initUniformBuffers()
+{
+    wgpu::BufferDescriptor bufferDescriptor{};
+    bufferDescriptor.size = sizeof(uint32_t); // Face id
+    bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+
+    for (uint32_t face = 0; face < 6; ++face)
+    {
+        m_uniformBuffers[face] = m_device.CreateBuffer(&bufferDescriptor);
+
+        uint32_t faceIndexValue = face;
+        m_device.GetQueue().WriteBuffer(m_uniformBuffers[face], 0, &faceIndexValue, sizeof(uint32_t));
+    }
+}
+
 void MipmapGenerator::initBindGroupLayouts()
 {
     // Common input texture layout
@@ -177,21 +192,6 @@ void MipmapGenerator::initComputePipelines()
     std::vector<wgpu::BindGroupLayout> layoutsCube = {m_bindGroupLayoutCube, m_bindGroupLayoutFace};
     m_pipeline2D = createComputePipeline("./assets/shaders/mipmap_generator_2d.wgsl", layouts2D);
     m_pipelineCube = createComputePipeline("./assets/shaders/mipmap_generator_cube.wgsl", layoutsCube);
-}
-
-void MipmapGenerator::initUniformBuffers()
-{
-    wgpu::BufferDescriptor bufferDescriptor{};
-    bufferDescriptor.size = sizeof(uint32_t); // Face id
-    bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-
-    for (uint32_t face = 0; face < 6; ++face)
-    {
-        m_uniformBuffers[face] = m_device.CreateBuffer(&bufferDescriptor);
-
-        uint32_t faceIndexValue = face;
-        m_device.GetQueue().WriteBuffer(m_uniformBuffers[face], 0, &faceIndexValue, sizeof(uint32_t));
-    }
 }
 
 wgpu::ComputePipeline MipmapGenerator::createComputePipeline(const std::string &shaderPath,

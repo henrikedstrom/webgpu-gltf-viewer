@@ -28,9 +28,9 @@ class MipmapGenerator
 
   private:
     // Pipeline initialization
+    void initUniformBuffers();
     void initBindGroupLayouts();
     void initComputePipelines();
-    void initUniformBuffers();
 
     // Helper functions
     wgpu::ComputePipeline createComputePipeline(const std::string &shaderPath,
