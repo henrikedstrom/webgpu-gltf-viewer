@@ -25,9 +25,16 @@ class EnvironmentPreprocessor
 
     // Public Interface
     void GenerateIrradianceMap(const wgpu::Texture &environmentCubemap, wgpu::Texture &outputCubemap);
-   // void GeneratePrefilteredSpecularMap(const wgpu::Texture &environmentCubemap, wgpu::Texture &outputCubemap);
+    void GeneratePrefilteredSpecularMap(const wgpu::Texture &environmentCubemap, wgpu::Texture &outputCubemap);
 
   private:
+    // Types
+    struct PrefilterParams
+    {
+        float roughness;
+        uint32_t numSamples;
+    };
+
     // Pipeline initialization
     void initUniformBuffers();
     void initSampler();
@@ -35,17 +42,17 @@ class EnvironmentPreprocessor
     void initComputePipelines();
 
     // Helper functions
-    wgpu::ComputePipeline createComputePipeline(const std::string &shaderPath, const std::string &entryPoint,
-                                                wgpu::BindGroupLayout layout);
+    wgpu::ComputePipeline createComputePipeline(const std::string &shaderPath, const std::string &entryPoint);
 
     // WebGPU objects (initialized by constructor)
     wgpu::Device m_device;
     wgpu::PipelineLayout m_pipelineLayout;
-    wgpu::BindGroupLayout m_bindGroupLayout;
-    wgpu::BindGroupLayout m_bindGroupLayoutFace;
+    wgpu::BindGroupLayout m_bindGroupLayouts[4];
     wgpu::ComputePipeline m_pipelineIrradiance;
-    //wgpu::ComputePipeline m_pipelinePrefilteredSpecular;
-    wgpu::Buffer m_uniformBuffers[6];
-    wgpu::BindGroup m_faceBindGroups[6];
+    wgpu::ComputePipeline m_pipelinePrefilteredSpecular;
+    wgpu::Buffer m_prefilterParamsBuffers[10];
+    wgpu::Buffer m_perFaceUniformBuffers[6];
+    wgpu::BindGroup m_prefilterParamsBindGroups[10];
+    wgpu::BindGroup m_perFaceBindGroups[6];
     wgpu::Sampler m_environmentSampler;
 };

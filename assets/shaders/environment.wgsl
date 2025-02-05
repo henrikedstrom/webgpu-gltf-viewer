@@ -69,7 +69,7 @@ fn toneMap(colorIn: vec3f) -> vec3f {
 @group(0) @binding(1) var environmentSampler: sampler;
 @group(0) @binding(2) var environmentTexture: texture_cube<f32>;
 @group(0) @binding(3) var environmentIrradianceTexture: texture_cube<f32>;
-
+@group(0) @binding(4) var environmentSpecularTexture: texture_cube<f32>;
 
 //---------------------------------------------------------------------
 // Vertex Shader

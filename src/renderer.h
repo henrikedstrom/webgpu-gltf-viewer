@@ -97,6 +97,8 @@ class Renderer
     wgpu::TextureView m_environmentTextureView;
     wgpu::Texture m_environmentIrradianceTexture;
     wgpu::TextureView m_environmentIrradianceTextureView;
+    wgpu::Texture m_environmentSpecularTexture;
+    wgpu::TextureView m_environmentSpecularTextureView;
     wgpu::Sampler m_environmentSampler;
     wgpu::ShaderModule m_environmentShaderModule;
     wgpu::RenderPipeline m_environmentPipeline;

@@ -40,6 +40,7 @@ namespace
 {
 
 constexpr uint32_t kIrradianceMapSize = 64;
+constexpr uint32_t kPrecomputedSpecularMapSize = 512;
 
 template <typename TextureInfo>
 void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, MipmapGenerator &mipmapGenerator,
@@ -157,11 +158,8 @@ void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, Mipm
     textureView = texture.CreateView(&viewDescriptor);
 }
 
-void CreateIrradianceMap(wgpu::Device device, wgpu::Texture &texture, wgpu::TextureView &textureView)
+void CreateEnvironmentCube(wgpu::Device device, uint32_t size, wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
-    // Use fixed size for the irradiance map
-    constexpr uint32_t size = kIrradianceMapSize;
-
     // Compute the number of mip levels
     const uint32_t mipLevelCount = static_cast<uint32_t>(std::log2(size)) + 1;
 
@@ -404,10 +402,14 @@ void Renderer::CreateTexturesAndSamplers()
                       m_environmentTextureView);
 
     // Create the environment irradiance map from the environment texture and generate mipmaps
-    CreateIrradianceMap(m_device, m_environmentIrradianceTexture, m_environmentIrradianceTextureView);
+    CreateEnvironmentCube(m_device, kIrradianceMapSize, m_environmentIrradianceTexture, m_environmentIrradianceTextureView);
     EnvironmentPreprocessor environmentPreprocessor(m_device);
     environmentPreprocessor.GenerateIrradianceMap(m_environmentTexture, m_environmentIrradianceTexture);
     mipmapGenerator.GenerateMipmaps(m_environmentIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, true);
+
+    // Create the environment prefiltered specular map
+    CreateEnvironmentCube(m_device, kPrecomputedSpecularMapSize, m_environmentSpecularTexture, m_environmentSpecularTextureView);
+    environmentPreprocessor.GeneratePrefilteredSpecularMap(m_environmentTexture, m_environmentSpecularTexture);
 
     // Create a sampler for the environment texture
     wgpu::SamplerDescriptor samplerDescriptor{};
@@ -461,7 +463,7 @@ void Renderer::CreateTexturesAndSamplers()
 
 void Renderer::CreateGlobalBindGroup()
 {
-    wgpu::BindGroupLayoutEntry layoutEntries[4] = {
+    wgpu::BindGroupLayoutEntry layoutEntries[] = {
         {
             .binding = 0,
             .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
@@ -491,16 +493,24 @@ void Renderer::CreateGlobalBindGroup()
                         .viewDimension = wgpu::TextureViewDimension::Cube,
                         .multisampled = false},
         },
+        {
+            // Environment specular texture binding
+            .binding = 4,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::Cube,
+                        .multisampled = false},
+        },
     };
 
     wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
-        .entryCount = 4,
+        .entryCount = 5,
         .entries = layoutEntries,
     };
 
     m_globalBindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
 
-    wgpu::BindGroupEntry bindGroupEntries[4] = {
+    wgpu::BindGroupEntry bindGroupEntries[] = {
         {
             .binding = 0,
             .buffer = m_globalUniformBuffer,
@@ -519,11 +529,15 @@ void Renderer::CreateGlobalBindGroup()
             .binding = 3,
             .textureView = m_environmentIrradianceTextureView,
         },
+        {
+            .binding = 4,
+            .textureView = m_environmentSpecularTextureView,
+        },
     };
 
     wgpu::BindGroupDescriptor bindGroupDescriptor{
         .layout = m_globalBindGroupLayout,
-        .entryCount = 4,
+        .entryCount = 5,
         .entries = bindGroupEntries,
     };
 
