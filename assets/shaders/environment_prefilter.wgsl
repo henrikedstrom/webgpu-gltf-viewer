@@ -1,24 +1,25 @@
+// This WGSL file implements three separate compute passes for IBL:
+// 1) computeIrradiance: Generates diffuse irradiance for a cube map (Lambertian).
+// 2) computePrefilteredSpecular: Generates specular prefiltered environment map using GGX.
+// 3) computeLUT: Computes the BRDF integration LUT for specular IBL (A and B channels).
+
 //=========================================================
 // Global Uniforms & Bind Group Declarations
 //=========================================================
 
-struct PrefilterParams {
-    roughness: f32,
-    numSamples: u32
-};
-
-// Bind Group 0 - Input: Environment texture
+// Bind Group 0 - Common parameters
 @group(0) @binding(0) var environmentSampler: sampler;
 @group(0) @binding(1) var environmentTexture: texture_cube<f32>;
+@group(0) @binding(2) var<uniform> numSamples: u32;
+@group(0) @binding(3) var irradianceCube: texture_storage_2d_array<rgba16float, write>;
+@group(0) @binding(4) var brdfLut2D: texture_storage_2d<rgba16float, write>;
 
-// Bind Group 1 - Input: Per-face parameters
+// Bind Group 1 - Per-face parameters
 @group(1) @binding(0) var<uniform> faceIndex: u32;
 
-// Bind Group 2 - Input: Per-Mip parameters
-@group(2) @binding(0) var<uniform> prefilterParams: PrefilterParams;
-
-// Bind Group 3 - Output: Resulting texture
-@group(3) @binding(0) var outputTexture: texture_storage_2d_array<rgba16float, write>;
+// Bind Group 2 - Per-Mip parameters
+@group(2) @binding(0) var<uniform> roughness: f32;
+@group(2) @binding(1) var prefilteredSpecularCube: texture_storage_2d_array<rgba16float, write>;
 
 
 //=========================================================
@@ -153,10 +154,20 @@ fn importanceSampleLambertian(sampleIndex: u32, sampleCount: u32, normal: vec3<f
 
 /// Evaluates the GGX (Trowbridge-Reitz) microfacet distribution function
 /// at the given NdotH and alpha (roughness^2).
-fn dGgx(NdotH: f32, alpha: f32) -> f32 {
+fn dGGX(NdotH: f32, alpha: f32) -> f32 {
     let a = NdotH * alpha;
     let k = alpha / (1.0 - NdotH*NdotH + a*a);
     return (k * k) / PI;
+}
+
+// From the filament docs. Geometric Shadowing function
+// https://google.github.io/filament/Filament.html#toc4.4.2
+fn vSmithGGXCorrelated(NdotV: f32, NdotL: f32, roughness: f32) -> f32 {
+    let a = roughness * roughness;
+    let a2 = a * a; // roughness^4
+    let GGXV = NdotL * sqrt(NdotV * NdotV * (1.0 - a2) + a2);
+    let GGXL = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
+    return 0.5 / (GGXV + GGXL);
 }
 
 // GGX microfacet distribution
@@ -164,7 +175,7 @@ fn dGgx(NdotH: f32, alpha: f32) -> f32 {
 // This implementation is based on https://bruop.github.io/ibl/,
 // https://www.tobias-franke.eu/log/2014/03/30/notes_on_importance_sampling.html
 // and https://developer.nvidia.com/gpugems/GPUGems3/gpugems3_ch20.html
-fn importanceSampleGgx(sampleIndex: u32, sampleCount: u32, normal: vec3<f32>, roughness: f32) -> vec4<f32> {
+fn importanceSampleGGX(sampleIndex: u32, sampleCount: u32, normal: vec3<f32>, roughness: f32) -> vec4<f32> {
 
     // Quasi-random point in the [0,1]^2 domain
     let xi = hammersley2D(sampleIndex, sampleCount);
@@ -186,25 +197,19 @@ fn importanceSampleGgx(sampleIndex: u32, sampleCount: u32, normal: vec3<f32>, ro
     let tbn = generateTBN(normal);
     let halfVec = normalize(tbn * localHalf);
 
-    // Reflect the view vector (assumed to be 'normal') about the half-vector.
-    let viewDir = normal;
-    let reflectDir = normalize(reflect(-viewDir, halfVec));
-
     // Compute the PDF for the GGX distribution.
-    let pdf = dGgx(cosTheta, alpha) / 4.0;
+    let pdf = dGGX(cosTheta, alpha) / 4.0;
 
-    // Return the reflected direction in .xyz and the PDF in .w.
-    return vec4<f32>(reflectDir, pdf);
+    // Return the half vector direction in .xyz and the PDF in .w.
+    return vec4<f32>(halfVec, pdf);
 }
 
 // Mipmap Filtered Samples (GPU Gems 3, 20.4)
 // https://developer.nvidia.com/gpugems/gpugems3/part-iii-rendering/chapter-20-gpu-based-importance-sampling
 // https://cgg.mff.cuni.cz/~jaroslav/papers/2007-sketch-fis/Final_sap_0073.pdf
-fn computeLod(pdf: f32, faceSize: f32) -> f32 {
-    let numSamples: f32 = f32(prefilterParams.numSamples);
-
+fn computeLOD(pdf: f32, faceSize: f32) -> f32 {
     // https://cgg.mff.cuni.cz/~jaroslav/papers/2007-sketch-fis/Final_sap_0073.pdf
-    return 0.5 * log2((6.0 * faceSize * faceSize) / (numSamples * pdf));
+    return 0.5 * log2((6.0 * faceSize * faceSize) / (f32(numSamples) * pdf));
 }
 
 
@@ -220,7 +225,7 @@ fn computeLod(pdf: f32, faceSize: f32) -> f32 {
 @compute @workgroup_size(8, 8)
 fn computeIrradiance(@builtin(global_invocation_id) id: vec3<u32>) {
 
-    let outputSize = textureDimensions(outputTexture).xy;
+    let outputSize = textureDimensions(irradianceCube).xy;
     if (id.x >= outputSize.x || id.y >= outputSize.y) { 
         return; 
     }
@@ -233,14 +238,14 @@ fn computeIrradiance(@builtin(global_invocation_id) id: vec3<u32>) {
     var weightSum = 0.0;
     
     // Sample directions around 'normal' using a cosine-weighted distribution (Lambertian).
-    for (var i = 0u; i < prefilterParams.numSamples; i++) {
+    for (var i = 0u; i < numSamples; i++) {
 
-        let sample = importanceSampleLambertian(i, prefilterParams.numSamples, normal);
+        let sample = importanceSampleLambertian(i, numSamples, normal);
         let sampleDir = sample.xyz;
         let pdf = sample.w;
         
         // Compute the mip level based on the PDF and the output texture size (avoid high-frequency noise).
-        let lod: f32 = computeLod(pdf, f32(outputSize.x));
+        let lod: f32 = computeLOD(pdf, f32(outputSize.x));
         
         // Fetch environment map color at this direction + LOD.
         let sampleColor = textureSampleLevel(environmentTexture, environmentSampler, sampleDir, lod).rgb;
@@ -257,7 +262,7 @@ fn computeIrradiance(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     // Store the result in the output cubemap, at the appropriate face.
-    textureStore(outputTexture, id.xy, faceIndex, vec4<f32>(irradiance, 1.0));
+    textureStore(irradianceCube, id.xy, faceIndex, vec4<f32>(irradiance, 1.0));
 }
 
 /// Generates a prefiltered (specular) environment map for the given face of a
@@ -265,36 +270,40 @@ fn computeIrradiance(@builtin(global_invocation_id) id: vec3<u32>) {
 @compute @workgroup_size(8, 8)
 fn computePrefilteredSpecular(@builtin(global_invocation_id) id: vec3<u32>) {
 
-    let outputSize = textureDimensions(outputTexture).xy;
+    let outputSize = textureDimensions(prefilteredSpecularCube).xy;
     if (id.x >= outputSize.x || id.y >= outputSize.y) { 
         return; 
     }
 
     // Convert (x, y) into [0,1] UV coordinates, then to a direction vector on the cube face.
     let uv = vec2<f32>(f32(id.x) / f32(outputSize.x), f32(id.y) / f32(outputSize.y));
-    let normal = normalize(uvToDirection(uv, faceIndex));
+    let N = normalize(uvToDirection(uv, faceIndex));
 
-    let roughness = prefilterParams.roughness;
     var accumSpecular = vec3<f32>(0.0);
     var weightSum = 0.0;
     
     // GGX importance sampling around 'normal'
-    for (var i = 0u; i < prefilterParams.numSamples; i++) {
+    for (var i = 0u; i < numSamples; i++) {
 
-        let sample = importanceSampleGgx(i, prefilterParams.numSamples, normal, roughness);
-        let sampleDir = sample.xyz;
+        let sample = importanceSampleGGX(i, numSamples, N, roughness);
+        let H = sample.xyz;
         let pdf = sample.w;
         
-        // Convert the PDF to a suitable mip level in the environment map.
-        let lod: f32 = computeLod(pdf, f32(outputSize.x));
+        let V = N;
+        let L = normalize(reflect(-V, H));
+        let NdotL = dot(N, L);
 
-        // Fetch environment map color at this direction + LOD.
-        let sampleColor = textureSampleLevel(environmentTexture, environmentSampler, sampleDir, lod).rgb;
-        
-        // Weight each sample by dot(N, L) and accumulate.
-        let weight = max(dot(normal, sampleDir), 0.0);
-        accumSpecular += sampleColor * weight;
-        weightSum += weight;
+        if (NdotL > 0.0) {
+            // Convert the PDF to a suitable mip level in the environment map.
+            let lod: f32 = computeLOD(pdf, f32(outputSize.x));
+
+            // Fetch environment map color at this direction + LOD.
+            let sampleColor = textureSampleLevel(environmentTexture, environmentSampler, L, lod).rgb;
+            
+            // Weight each sample by dot(N, L) and accumulate.
+            accumSpecular += sampleColor * NdotL;
+            weightSum += NdotL;
+        }
     }
 
     // Normalize by total weight
@@ -303,5 +312,55 @@ fn computePrefilteredSpecular(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     // Store the result in the output cubemap, at the appropriate face.
-    textureStore(outputTexture, id.xy, faceIndex, vec4<f32>(accumSpecular, 1.0));
+    textureStore(prefilteredSpecularCube, id.xy, faceIndex, vec4<f32>(accumSpecular, 1.0));
+}
+
+/// Computes the BRDF integration LUT for specular IBL
+@compute @workgroup_size(8, 8)
+fn computeLUT(@builtin(global_invocation_id) id: vec3<u32>) {
+
+    let resolution = textureDimensions(brdfLut2D).xy;
+    if (id.x >= resolution.x || id.y >= resolution.y) { 
+        return; 
+    }
+
+    // Convert (x, y) into [0,1] NdotV and roughness values.
+    // Apply a small epsilon to avoid singularities.
+    let eps = 1e-5;
+    let minRough = 0.001;
+    let NdotV = clamp((f32(id.x) + 0.5) / f32(resolution.x), eps, 1.0 - eps);
+    let roughness = clamp((f32(id.y) + 0.5) / f32(resolution.y), minRough, 1.0 - eps);
+
+    // Compute the view vector (V) and the normal vector (N).
+    let V = vec3<f32>(sqrt(1.0 - NdotV * NdotV), 0.0, NdotV);
+    let N = vec3<f32>(0.0, 0.0, 1.0);
+
+    var A = 0.0;
+    var B = 0.0;
+
+    // Monte Carlo integrate over hemisphere using GGX importance sampling.
+    for (var i = 0u; i < numSamples; i++) {
+        let sample = importanceSampleGGX(i, numSamples, N, roughness);
+        let H = sample.xyz;
+        let L = normalize(2.0 * dot(V, H) * H - V);
+
+        let NdotL = saturate(L.z);
+        let NdotH = saturate(H.z);
+        let VdotH = saturate(dot(V, H));
+
+        if (NdotL > 0.0) {  
+            let G = vSmithGGXCorrelated(NdotV, NdotL, roughness);
+            let Gv = (G * VdotH * NdotL) / NdotH;           
+            let Fc = pow(1.0 - VdotH, 5.0);  // Fresnel term
+
+            A += (1.0 - Fc) * Gv;
+            B += Fc * Gv;
+        }
+    }
+
+    let scale = 4.0;
+    A = (A * scale) / f32(numSamples);
+    B = (B * scale) / f32(numSamples);
+
+    textureStore(brdfLut2D, id.xy, vec4<f32>(A, B, 0.0, 1.0));
 }

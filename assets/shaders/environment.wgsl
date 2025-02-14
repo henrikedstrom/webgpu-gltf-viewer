@@ -70,6 +70,7 @@ fn toneMap(colorIn: vec3f) -> vec3f {
 @group(0) @binding(2) var environmentTexture: texture_cube<f32>;
 @group(0) @binding(3) var environmentIrradianceTexture: texture_cube<f32>;
 @group(0) @binding(4) var environmentSpecularTexture: texture_cube<f32>;
+@group(0) @binding(5) var environmentBRDFTexture: texture_2d<f32>;
 
 //---------------------------------------------------------------------
 // Vertex Shader
@@ -97,6 +98,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+
     // Convert the UV coordinates to NDC
     let ndc = input.uv * 2.0 - 1.0;
 
