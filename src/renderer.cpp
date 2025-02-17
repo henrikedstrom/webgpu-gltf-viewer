@@ -159,7 +159,7 @@ void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, Mipm
     textureView = texture.CreateView(&viewDescriptor);
 }
 
-void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension type, wgpu::Extent3D size,
+void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension type, wgpu::Extent3D size, bool mipmapping,
                               wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
     // Compute the number of mip levels
@@ -172,7 +172,7 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
     textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
                               wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc |
                               wgpu::TextureUsage::RenderAttachment;
-    textureDescriptor.mipLevelCount = mipLevelCount;
+    textureDescriptor.mipLevelCount = mipmapping ? mipLevelCount : 1;
 
     texture = device.CreateTexture(&textureDescriptor);
 
@@ -180,7 +180,7 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
     wgpu::TextureViewDescriptor viewDescriptor{};
     viewDescriptor.format = wgpu::TextureFormat::RGBA16Float;
     viewDescriptor.dimension = type;
-    viewDescriptor.mipLevelCount = mipLevelCount;
+    viewDescriptor.mipLevelCount = mipmapping ? mipLevelCount : 1;
     viewDescriptor.arrayLayerCount = size.depthOrArrayLayers;
 
     textureView = texture.CreateView(&viewDescriptor);
@@ -405,19 +405,19 @@ void Renderer::CreateTexturesAndSamplers()
 
     // Create IBL precomputed maps
     CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube, {kIrradianceMapSize, kIrradianceMapSize, 6},
-                             m_environmentIrradianceTexture, m_environmentIrradianceTextureView);
+                             true, m_iblIrradianceTexture, m_iblIrradianceTextureView);
     CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube,
-                             {kPrecomputedSpecularMapSize, kPrecomputedSpecularMapSize, 6},
-                             m_environmentSpecularTexture, m_environmentSpecularTextureView);
+                             {kPrecomputedSpecularMapSize, kPrecomputedSpecularMapSize, 6}, true,
+                             m_iblSpecularTexture, m_iblSpecularTextureView);
     CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::e2D,
-                             {kBRDFIntegrationLUTMapSize, kBRDFIntegrationLUTMapSize, 1}, m_brdfIntegrationLUT,
-                             m_brdfIntegrationLUTView);
+                             {kBRDFIntegrationLUTMapSize, kBRDFIntegrationLUTMapSize, 1}, false, m_iblBrdfIntegrationLUT,
+                             m_iblBrdfIntegrationLUTView);
 
     // Precompute maps
     EnvironmentPreprocessor environmentPreprocessor(m_device);
-    environmentPreprocessor.GenerateMaps(m_environmentTexture, m_environmentIrradianceTexture,
-                                         m_environmentSpecularTexture, m_brdfIntegrationLUT);
-    mipmapGenerator.GenerateMipmaps(m_environmentIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, true);
+    environmentPreprocessor.GenerateMaps(m_environmentTexture, m_iblIrradianceTexture,
+                                         m_iblSpecularTexture, m_iblBrdfIntegrationLUT);
+    mipmapGenerator.GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, true);
 
     // Create a sampler for the environment texture
     wgpu::SamplerDescriptor samplerDescriptor{};
@@ -427,7 +427,16 @@ void Renderer::CreateTexturesAndSamplers()
     samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
     samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
     samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-    m_environmentSampler = m_device.CreateSampler(&samplerDescriptor);
+    m_environmentCubeSampler = m_device.CreateSampler(&samplerDescriptor);
+
+    // Create a sampler for the IBL BRDF LUT texture
+    samplerDescriptor.addressModeU = wgpu::AddressMode::ClampToEdge;
+    samplerDescriptor.addressModeV = wgpu::AddressMode::ClampToEdge;
+    samplerDescriptor.addressModeW = wgpu::AddressMode::ClampToEdge;
+    samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+    samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
+    m_iblBrdfIntegrationLUTSampler = m_device.CreateSampler(&samplerDescriptor);
 
     // Check if the model has any textures
     if (!m_model->GetMaterials().empty())
@@ -494,7 +503,7 @@ void Renderer::CreateGlobalBindGroup()
                         .multisampled = false},
         },
         {
-            // Environment irradiance texture binding
+            // IBL irradiance texture binding
             .binding = 3,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
@@ -502,7 +511,7 @@ void Renderer::CreateGlobalBindGroup()
                         .multisampled = false},
         },
         {
-            // Environment specular texture binding
+            // IBL specular texture binding
             .binding = 4,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
@@ -510,17 +519,23 @@ void Renderer::CreateGlobalBindGroup()
                         .multisampled = false},
         },
         {
-            // Environment LUT texture binding
+            // IBL LUT texture binding
             .binding = 5,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
                         .viewDimension = wgpu::TextureViewDimension::e2D,
                         .multisampled = false},
         },
+        {
+            // IBL LUT sampler binding
+            .binding = 6,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .sampler = {.type = wgpu::SamplerBindingType::Filtering},
+        },
     };
 
     wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
-        .entryCount = 6,
+        .entryCount = 7,
         .entries = layoutEntries,
     };
 
@@ -535,7 +550,7 @@ void Renderer::CreateGlobalBindGroup()
         },
         {
             .binding = 1,
-            .sampler = m_environmentSampler,
+            .sampler = m_environmentCubeSampler,
         },
         {
             .binding = 2,
@@ -543,21 +558,25 @@ void Renderer::CreateGlobalBindGroup()
         },
         {
             .binding = 3,
-            .textureView = m_environmentIrradianceTextureView,
+            .textureView = m_iblIrradianceTextureView,
         },
         {
             .binding = 4,
-            .textureView = m_environmentSpecularTextureView,
+            .textureView = m_iblSpecularTextureView,
         },
         {
             .binding = 5,
-            .textureView = m_brdfIntegrationLUTView,
+            .textureView = m_iblBrdfIntegrationLUTView,
+        },
+        {
+            .binding = 6,
+            .sampler = m_iblBrdfIntegrationLUTSampler,
         },
     };
 
     wgpu::BindGroupDescriptor bindGroupDescriptor{
         .layout = m_globalBindGroupLayout,
-        .entryCount = 6,
+        .entryCount = 7,
         .entries = bindGroupEntries,
     };
 

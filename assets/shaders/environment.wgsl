@@ -66,11 +66,12 @@ fn toneMap(colorIn: vec3f) -> vec3f {
 // Bind Groups
 
 @group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-@group(0) @binding(1) var environmentSampler: sampler;
+@group(0) @binding(1) var environmentCubeSampler: sampler;
 @group(0) @binding(2) var environmentTexture: texture_cube<f32>;
-@group(0) @binding(3) var environmentIrradianceTexture: texture_cube<f32>;
-@group(0) @binding(4) var environmentSpecularTexture: texture_cube<f32>;
-@group(0) @binding(5) var environmentBRDFTexture: texture_2d<f32>;
+@group(0) @binding(3) var iblIrradianceTexture: texture_cube<f32>;
+@group(0) @binding(4) var iblSpecularTexture: texture_cube<f32>;
+@group(0) @binding(5) var iblBRDFIntegrationLUTTexture: texture_2d<f32>;
+@group(0) @binding(6) var iblBRDFIntegrationLUTSampler: sampler;
 
 //---------------------------------------------------------------------
 // Vertex Shader
@@ -117,7 +118,7 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
     dir = normalize(invRotMatrix * dir);
 
     // Sample the environment texture
-    let iblSample = textureSample(environmentTexture, environmentSampler, dir).rgb;
+    let iblSample = textureSample(environmentTexture, environmentCubeSampler, dir).rgb;
 
     // Tonemapping and gamma correction
     let color = toneMap(iblSample);

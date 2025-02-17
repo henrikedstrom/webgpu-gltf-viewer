@@ -92,16 +92,17 @@ class Renderer
     wgpu::BindGroupLayout m_globalBindGroupLayout;
     wgpu::BindGroup m_globalBindGroup;
 
-    // Environment related data
+    // Environment and IBL related data
     wgpu::Texture m_environmentTexture;
     wgpu::TextureView m_environmentTextureView;
-    wgpu::Texture m_environmentIrradianceTexture;
-    wgpu::TextureView m_environmentIrradianceTextureView;
-    wgpu::Texture m_environmentSpecularTexture;
-    wgpu::TextureView m_environmentSpecularTextureView;
-    wgpu::Texture m_brdfIntegrationLUT;
-    wgpu::TextureView m_brdfIntegrationLUTView;
-    wgpu::Sampler m_environmentSampler;
+    wgpu::Texture m_iblIrradianceTexture;
+    wgpu::TextureView m_iblIrradianceTextureView;
+    wgpu::Texture m_iblSpecularTexture;
+    wgpu::TextureView m_iblSpecularTextureView;
+    wgpu::Texture m_iblBrdfIntegrationLUT;
+    wgpu::TextureView m_iblBrdfIntegrationLUTView;
+    wgpu::Sampler m_environmentCubeSampler;
+    wgpu::Sampler m_iblBrdfIntegrationLUTSampler;
     wgpu::ShaderModule m_environmentShaderModule;
     wgpu::RenderPipeline m_environmentPipeline;
 

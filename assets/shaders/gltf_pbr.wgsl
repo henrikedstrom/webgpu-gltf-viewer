@@ -24,10 +24,12 @@ struct MaterialInfo {
     baseColor: vec3f,
     metallic: f32,
     perceptualRoughness: f32,
+    f0_dielectric: vec3f,
     alphaRoughness: f32,
     f0: vec3f,
     f90: vec3f,
-    cDiffuse: vec3f
+    cDiffuse: vec3f,
+    specularWeight: f32
 };
 
 struct VertexInput {
@@ -52,10 +54,12 @@ struct VertexOutput {
 // Bind Groups
 
 @group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-@group(0) @binding(1) var environmentSampler: sampler;
+@group(0) @binding(1) var iblSampler: sampler;
 @group(0) @binding(2) var environmentTexture: texture_cube<f32>;
-@group(0) @binding(3) var environmentIrradianceTexture: texture_cube<f32>;
-@group(0) @binding(4) var environmentSpecularTexture: texture_cube<f32>;
+@group(0) @binding(3) var iblIrradianceTexture: texture_cube<f32>;
+@group(0) @binding(4) var iblSpecularTexture: texture_cube<f32>;
+@group(0) @binding(5) var iblBRDFIntegrationLUTTexture: texture_2d<f32>;
+@group(0) @binding(6) var iblBRDFIntegrationLUTSampler: sampler;
 
 @group(1) @binding(0) var<uniform> modelUniforms: ModelUniforms;
 @group(1) @binding(1) var textureSampler: sampler;
@@ -96,6 +100,61 @@ fn FSchlick(f0: vec3f, f90: vec3f, vDotH: f32) -> vec3f {
 
 fn BRDFLambertian(f0: vec3f, f90: vec3f, diffuseColor: vec3f, specularWeight: f32, vDotH: f32) -> vec3f {
     return (1.0 - specularWeight * FSchlick(f0, f90, vDotH)) * (diffuseColor / pi);
+}
+
+// A helper function for sampling the environment map at a given LOD
+fn samplePrefilteredSpecularIBL(reflection: vec3<f32>, lod: f32) -> vec4<f32> {
+    let sampleColor = textureSampleLevel(iblSpecularTexture, iblSampler, reflection, lod);
+    return sampleColor;
+}
+
+// Computes GGX prefiltered specular lighting from the environment
+fn getIBLRadianceGGX(n: vec3<f32>, v: vec3<f32>, roughness: f32) -> vec3<f32> {
+ 
+    // Compute the dot product of normal and view vector, clamped to [0,1]
+    let NdotV = max(dot(n, v), 0.0);
+
+    // Derive the LOD based on roughness and total mip count
+    let lod = roughness * (f32(10) - 1.0);
+
+    // Reflect the view vector around the normal
+    let reflection = normalize(reflect(-v, n));
+
+    // Sample the prefiltered environment
+    let specularSample = samplePrefilteredSpecularIBL(reflection, lod);
+
+    // Return the RGB channels as the specular lighting
+    return specularSample.rgb;
+}
+
+// Computes the environment Fresnel reflectance using a GGX BRDF LUT, accounting for single and multiple scattering.
+fn getIBLGGXFresnel(n: vec3<f32>, v: vec3<f32>, roughness: f32, F0: vec3<f32>, specularWeight: f32) -> vec3<f32> 
+{
+    // Compute the dot product of normal and view vector, clamped to [0,1]
+    let NdotV = max(dot(n, v), 0.0);
+
+    // Lookup coordinates for the BRDF integration LUT (NdotV, roughness)
+    let brdfLUTCoords = vec2<f32>(NdotV, roughness);
+
+    // Sample the precomputed GGX LUT (stores scale and bias for Fresnel-Schlick approximation)
+    let brdfLUTSample = textureSample(iblBRDFIntegrationLUTTexture, iblBRDFIntegrationLUTSampler, brdfLUTCoords);
+    let brdfLUT = brdfLUTSample.rg; // .x = scale factor, .y = bias term
+
+    // Single-scattering Fresnel component (Fdez-Aguera approximation)
+    // "fresnelPivot" adjusts F0 based on roughness to account for microfacet distribution
+    let fresnelPivot = max(vec3<f32>(1.0 - roughness), F0) - F0;
+    let fresnelSingleScatter = F0 + fresnelPivot * pow(1.0 - NdotV, 5.0);
+
+    // Compute the weighted single-scattering specular term
+    let FssEss = specularWeight * (fresnelSingleScatter * brdfLUT.x + brdfLUT.y);
+
+    // Multiple-scattering Fresnel component
+    let Ems = 1.0 - (brdfLUT.x + brdfLUT.y); // Energy conservation term
+    let F_avg = specularWeight * (F0 + (1.0 - F0) / 21.0); // Approximated average Fresnel reflectance
+    let FmsEms = Ems * FssEss * F_avg / (1.0 - F_avg * Ems);
+
+    // Final Fresnel reflection including multiple scattering
+    return FssEss + FmsEms;
 }
 
 // https://google.github.io/filament/Filament.md.html#materialsystem/specularbrdf/geometricshadowing(specularg), Listing 3
@@ -149,10 +208,10 @@ fn toneMapPBRNeutral(colorIn: vec3f) -> vec3f {
 }
 
 fn toneMap(colorIn: vec3f) -> vec3f {
-  const gamma = 1.0;
+  const gamma = 2.2;
   const invGamma = 1.0 / gamma;
 
-  const exposure = 15.0;
+  const exposure = 1.0;
 
   var color = colorIn * exposure;
 
@@ -194,11 +253,17 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
     // Set up material properties
     let metallicRoughness = textureSample(metallicRoughnessTexture, textureSampler, in.texCoord0).rgb;
+    var baseColor = textureSample(baseColorTexture, textureSampler, in.texCoord0).rgb;
+
+    // TEMP HACK: convert from sRGB to linear
+    baseColor = pow(baseColor, vec3f(2.2));
 
     var materialInfo: MaterialInfo;
-    materialInfo.baseColor = in.color.rgb * textureSample(baseColorTexture, textureSampler, in.texCoord0).rgb;
+    materialInfo.baseColor = in.color.rgb * baseColor;
     materialInfo.metallic = metallicRoughness.b; // TODO: Multiply by metallic factor
     materialInfo.perceptualRoughness = metallicRoughness.g; // TODO: Multiply by roughness factor
+    materialInfo.f0_dielectric = vec3f(0.04);
+    materialInfo.specularWeight = 1.0;
     materialInfo.alphaRoughness = metallicRoughness.g * metallicRoughness.g;
     materialInfo.f0 = mix(vec3f(0.04), materialInfo.baseColor, materialInfo.metallic);
     materialInfo.f90 = vec3f(1.0);
@@ -207,11 +272,29 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     let n = getNormal(in);
 	let v = normalize(in.viewDirectionWorld);
 	
-    var diffuse = vec3f(0.0);
-    var specular = vec3f(0.0);
+    var color = vec3f(0.0);
+
+    // Environment lighting
+    {
+        // Sample the irradiance texture
+        let diffuseEnv = textureSample(iblIrradianceTexture, iblSampler, in.normalWorld).rgb;
+        let iblDiffuse = diffuseEnv * materialInfo.baseColor;
+
+        // Sample the specular texture
+        let iblSpecular         = getIBLRadianceGGX(n, v, materialInfo.perceptualRoughness);
+        let fresnelDielectric   = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.f0_dielectric, materialInfo.specularWeight);
+        let iblDielectric       = mix(iblDiffuse, iblSpecular, fresnelDielectric);
+        let fresnelMetal        = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.baseColor, 1.0);
+        let iblMetal            = fresnelMetal * iblSpecular;
+
+        color += mix(iblDielectric, iblMetal, materialInfo.metallic);
+    }
+
+    let ao = textureSample(occlusionTexture, textureSampler, in.texCoord0).r; // TODO: apply occlusion factor
+    color *= vec3f(ao);
 
     // Direct lighting
-    {
+    if (false) {
         // Define a global light
         let globalLightDirWorld: vec3<f32> = normalize(vec3<f32>(1.0, 1.0, 1.0));
         let lightColor: vec3<f32> = vec3<f32>(1.0, 0.9, 0.7); // Slight yellow tint
@@ -227,25 +310,17 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
         let vDotH = clampedDot(v, h);
 
         if (nDotL >= 0.0 && nDotV >= 0.0) {
-            diffuse += lightColor * nDotL * BRDFLambertian(materialInfo.f0, materialInfo.f90, materialInfo.cDiffuse, 1.0, nDotH);
-            specular += lightColor * nDotL * BRDFSpecularGGX(materialInfo.f0, materialInfo.f90, materialInfo.alphaRoughness, 1.0, vDotH, nDotL, nDotV, nDotH);
+            color += lightColor * nDotL * BRDFLambertian(materialInfo.f0, materialInfo.f90, materialInfo.cDiffuse, 1.0, nDotH);
+            color += lightColor * nDotL * BRDFSpecularGGX(materialInfo.f0, materialInfo.f90, materialInfo.alphaRoughness, 1.0, vDotH, nDotL, nDotV, nDotH);
         }
     }
+   
+    var emissive = textureSample(emissiveTexture, textureSampler, in.texCoord0).rgb;
 
-    // Environment lighting
-    {
-        // Sample the irradiance texture
-        let irrad = textureSample(environmentIrradianceTexture, environmentSampler, in.normalWorld).rgb;
-        diffuse += irrad * BRDFLambertian(materialInfo.f0, materialInfo.f90, materialInfo.cDiffuse, 1.0, 1.0);
-    }
+    // TEMP HACK: convert from sRGB to linear
+    emissive = pow(emissive, vec3f(2.2));
 
-    let ao = textureSample(occlusionTexture, textureSampler, in.texCoord0).rgb; // TODO: apply occlusion factor
-    diffuse *= ao; 
-    specular *= ao; 
-    
-    let emissive = textureSample(emissiveTexture, textureSampler, in.texCoord0).rgb;
-    
-    var color = emissive + diffuse + specular;
+    color += emissive;
 
     color = toneMap(color);
     
