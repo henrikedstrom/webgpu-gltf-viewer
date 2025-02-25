@@ -36,6 +36,7 @@ class Renderer
     void Render(const glm::mat4 &modelMatrix);
     void ReloadShaders();
     void UpdateModel(const Model &model);
+    void UpdateEnvironment(const Environment &environment);
 
   private:
     // Private utility methods

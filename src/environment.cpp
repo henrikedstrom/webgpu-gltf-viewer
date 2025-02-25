@@ -25,14 +25,13 @@ namespace
 
 void LoadTexture(const std::string &filename, Environment::Texture &texture)
 {
-    
-
     // Load the texture
     int width, height, components;
     float *data = stbi_loadf(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
     if (!data)
     {
         std::cerr << "Failed to load image: " << filename << std::endl;
+        std::cerr << "stb_image failure: " << stbi_failure_reason() << std::endl;
         return;
     }
     if (width != 2 * height) {

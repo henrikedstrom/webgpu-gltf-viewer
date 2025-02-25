@@ -333,6 +333,27 @@ void Renderer::UpdateModel(const Model &model)
     CreateModelRenderPipeline();
 }
 
+void Renderer::UpdateEnvironment(const Environment &environment)
+{
+    // Destroy the existing environment resources
+    m_environmentTexture = nullptr;
+    m_environmentTextureView = nullptr;
+    m_iblIrradianceTexture = nullptr;
+    m_iblIrradianceTextureView = nullptr;
+    m_iblSpecularTexture = nullptr;
+    m_iblSpecularTextureView = nullptr;
+    m_iblBrdfIntegrationLUT = nullptr;
+    m_iblBrdfIntegrationLUTView = nullptr;
+    m_environmentCubeSampler = nullptr;
+    m_iblBrdfIntegrationLUTSampler = nullptr;
+    m_environmentShaderModule = nullptr;
+    m_environmentPipeline = nullptr;
+
+    CreateEnvironmentTexturesAndSamplers();
+    CreateGlobalBindGroup();
+    CreateEnvironmentRenderPipeline();
+}
+
 void Renderer::InitGraphics(const Model &model)
 {
     ConfigureSurface();

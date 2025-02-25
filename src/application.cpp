@@ -1,3 +1,5 @@
+// Standard Library Headers
+#include <algorithm>
 
 // Third-Party Library Headers
 #include <GLFW/glfw3.h>
@@ -174,9 +176,27 @@ void Application::OnFileDropped(int count, const char **paths)
     if (count > 0)
     {
         std::string filepath = paths[0]; // Load only the first file
-        std::cout << "Loading model: " << filepath << std::endl;
-        m_model.Load(filepath);
-        RepositionCamera(m_camera, m_model);
-        m_renderer.UpdateModel(m_model);
+
+        // Convert file extension to lowercase for case-insensitive comparison
+        std::string extension = filepath.substr(filepath.find_last_of(".") + 1);
+        std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+
+        if (extension == "gltf" || extension == "glb")
+        {
+            std::cout << "Loading model: " << filepath << std::endl;
+            m_model.Load(filepath);
+            RepositionCamera(m_camera, m_model);
+            m_renderer.UpdateModel(m_model);
+        }
+        else if (extension == "hdr")
+        {
+            std::cout << "Loading environment: " << filepath << std::endl;
+            m_environment.Load(filepath);
+            m_renderer.UpdateEnvironment(m_environment);
+        }
+        else
+        {
+            std::cerr << "Unsupported file type: " << filepath << std::endl;
+        }
     }
 }
