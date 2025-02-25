@@ -35,6 +35,7 @@ class Application
     void Run();
     void OnKeyPressed(int key);
     void OnResize(int width, int height);
+    void OnFileDropped(int count, const char **paths);
 
   private:
     // Private Member Functions

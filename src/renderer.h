@@ -30,25 +30,28 @@ class Renderer
     Renderer &operator=(Renderer &&) = delete;
 
     // Public Interface
-    void Initialize(GLFWwindow *window, Camera *camera, Environment *environment, Model *model, uint32_t width,
+    void Initialize(GLFWwindow *window, Camera *camera, Environment *environment, const Model &model, uint32_t width,
                     uint32_t height, const std::function<void()> &callback);
     void Resize(uint32_t width, uint32_t height);
-    void Render();
+    void Render(const glm::mat4 &modelMatrix);
     void ReloadShaders();
+    void UpdateModel(const Model &model);
 
   private:
     // Private utility methods
-    void InitGraphics();
+    void InitGraphics(const Model &model);
     void ConfigureSurface();
     void CreateDepthTexture();
-    void CreateVertexBuffer();
-    void CreateIndexBuffer();
+    void CreateVertexBuffer(const Model &model);
+    void CreateIndexBuffer(const Model &model);
     void CreateUniformBuffers();
-    void CreateTexturesAndSamplers();
+    void CreateEnvironmentTexturesAndSamplers();
+    void CreateModelTexturesAndSamplers(const Model &model);
     void CreateGlobalBindGroup();
     void CreateModelBindGroup();
-    void CreateRenderPipelines();
-    void UpdateUniforms() const;
+    void CreateEnvironmentRenderPipeline();
+    void CreateModelRenderPipeline();
+    void UpdateUniforms(const glm::mat4 &modelMatrix) const;
     void GetAdapter(const std::function<void(wgpu::Adapter)> &callback);
     void GetDevice(const std::function<void(wgpu::Device)> &callback);
     std::string LoadShaderFile(const std::string &filepath) const;
@@ -76,7 +79,6 @@ class Renderer
     uint32_t m_height = 0;
     Camera *m_camera = nullptr;
     Environment *m_environment = nullptr;
-    Model *m_model = nullptr;
 
     // WebGPU variables
     wgpu::Instance m_instance;
@@ -113,6 +115,7 @@ class Renderer
     wgpu::RenderPipeline m_modelPipeline;
     wgpu::Buffer m_vertexBuffer;
     wgpu::Buffer m_indexBuffer;
+    uint32_t m_indexCount = 0;
     wgpu::Buffer m_modelUniformBuffer;
     wgpu::Sampler m_sampler;
 

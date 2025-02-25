@@ -93,6 +93,24 @@ void Camera::Pan(int dx, int dy)
     m_target += m_up * delta_y + m_right * delta_x;
 }
 
+void Camera::SetPosition(const glm::vec3 &position)
+{
+    m_position = position;
+    UpdateCameraVectors();
+}
+
+void Camera::SetTarget(const glm::vec3 &target)
+{
+    m_target = target;
+    UpdateCameraVectors();
+}
+
+void Camera::SetNearFarPlanes(float near, float far)
+{
+    m_near = near;
+    m_far = far;
+}
+
 void Camera::ResizeViewport(int width, int height)
 {
     if (width > 0 && height > 0)
@@ -116,6 +134,11 @@ glm::mat4 Camera::GetProjectionMatrix() const noexcept
 glm::vec3 Camera::GetWorldPosition() const noexcept
 {
     return m_position;
+}
+
+float Camera::GetFOV() const noexcept
+{
+    return kDefaultFOV;
 }
 
 void Camera::UpdateCameraVectors()

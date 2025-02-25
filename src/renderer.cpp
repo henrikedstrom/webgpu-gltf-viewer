@@ -191,20 +191,19 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
 //----------------------------------------------------------------------
 // Renderer Class implementation
 
-void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *environment, Model *model, uint32_t width,
+void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *environment, const Model &model, uint32_t width,
                           uint32_t height, const std::function<void()> &callback)
 {
     m_window = window;
     m_camera = camera;
     m_environment = environment;
-    m_model = model;
     m_width = width;
     m_height = height;
 
     m_instance = wgpu::CreateInstance();
-    GetAdapter([this, callback](wgpu::Adapter adapter) {
+    GetAdapter([this, callback, &model](wgpu::Adapter adapter) {
         m_adapter = adapter;
-        GetDevice([this, callback](wgpu::Device device) {
+        GetDevice([this, callback, &model](wgpu::Device device) {
             m_device = device;
 
 #if defined(__EMSCRIPTEN__)
@@ -216,7 +215,7 @@ void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *envir
             m_surface = wgpu::glfw::CreateSurfaceForWindow(m_instance, m_window);
 #endif
 
-            InitGraphics();
+            InitGraphics(model);
 
             // Return control to the application
             callback();
@@ -236,9 +235,9 @@ void Renderer::Resize(uint32_t width, uint32_t height)
     ConfigureSurface();
 }
 
-void Renderer::Render()
+void Renderer::Render(const glm::mat4 &modelMatrix)
 {
-    UpdateUniforms();
+    UpdateUniforms(modelMatrix);
 
     wgpu::SurfaceTexture surfaceTexture;
     m_surface.GetCurrentTexture(&surfaceTexture);
@@ -280,7 +279,7 @@ void Renderer::Render()
     pass.SetPipeline(m_modelPipeline);
     pass.SetVertexBuffer(0, m_vertexBuffer);
     pass.SetIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint32);
-    pass.DrawIndexed(static_cast<uint32_t>(m_model->GetIndices().size()));
+    pass.DrawIndexed(m_indexCount);
 
     // End the pass
     pass.End();
@@ -301,19 +300,55 @@ void Renderer::ReloadShaders()
     m_modelPipeline = nullptr;
     m_modelShaderModule = nullptr;
 
-    CreateRenderPipelines();
+    CreateEnvironmentRenderPipeline();
+    CreateModelRenderPipeline();
 }
 
-void Renderer::InitGraphics()
+void Renderer::UpdateModel(const Model &model)
+{
+    // Destroy the existing model resources
+    m_vertexBuffer = nullptr;
+    m_indexBuffer = nullptr;
+
+    m_baseColorTexture = nullptr;
+    m_metallicRoughnessTexture = nullptr;
+    m_normalTexture = nullptr;
+    m_occlusionTexture = nullptr;
+    m_emissiveTexture = nullptr;
+    m_baseColorTextureView = nullptr;
+    m_metallicRoughnessTextureView = nullptr;
+    m_normalTextureView = nullptr;
+    m_occlusionTextureView = nullptr;
+    m_emissiveTextureView = nullptr;
+    m_sampler = nullptr;
+    m_modelBindGroup = nullptr;
+    m_modelBindGroupLayout = nullptr;
+    m_modelShaderModule = nullptr;
+    m_modelPipeline = nullptr;
+
+    CreateVertexBuffer(model);
+    CreateIndexBuffer(model);
+    CreateModelTexturesAndSamplers(model);
+    CreateModelBindGroup();
+    CreateModelRenderPipeline();
+}
+
+void Renderer::InitGraphics(const Model &model)
 {
     ConfigureSurface();
     CreateDepthTexture();
 
-    CreateVertexBuffer();
-    CreateIndexBuffer();
+    CreateVertexBuffer(model);
+    CreateIndexBuffer(model);
     CreateUniformBuffers();
-    CreateTexturesAndSamplers();
-    CreateRenderPipelines();
+
+    CreateEnvironmentTexturesAndSamplers();
+    CreateGlobalBindGroup();
+    CreateEnvironmentRenderPipeline();
+
+    CreateModelTexturesAndSamplers(model);
+    CreateModelBindGroup();
+    CreateModelRenderPipeline();
 }
 
 void Renderer::ConfigureSurface()
@@ -337,9 +372,9 @@ void Renderer::CreateDepthTexture()
     m_depthTextureView = m_depthTexture.CreateView();
 }
 
-void Renderer::CreateVertexBuffer()
+void Renderer::CreateVertexBuffer(const Model &model)
 {
-    const std::vector<Model::Vertex> &vertexData = m_model->GetVertices();
+    const std::vector<Model::Vertex> &vertexData = model.GetVertices();
 
     wgpu::BufferDescriptor vertexBufferDesc{};
     vertexBufferDesc.size = vertexData.size() * sizeof(Model::Vertex);
@@ -351,9 +386,9 @@ void Renderer::CreateVertexBuffer()
     m_vertexBuffer.Unmap();
 }
 
-void Renderer::CreateIndexBuffer()
+void Renderer::CreateIndexBuffer(const Model &model)
 {
-    const std::vector<uint32_t> indexData = m_model->GetIndices();
+    const std::vector<uint32_t> &indexData = model.GetIndices();
 
     wgpu::BufferDescriptor indexBufferDesc{};
     indexBufferDesc.size = indexData.size() * sizeof(uint32_t);
@@ -363,6 +398,8 @@ void Renderer::CreateIndexBuffer()
     m_indexBuffer = m_device.CreateBuffer(&indexBufferDesc);
     std::memcpy(m_indexBuffer.GetMappedRange(), indexData.data(), indexData.size() * sizeof(uint32_t));
     m_indexBuffer.Unmap();
+
+    m_indexCount = static_cast<uint32_t>(indexData.size());
 }
 
 void Renderer::CreateUniformBuffers()
@@ -395,7 +432,7 @@ void Renderer::CreateUniformBuffers()
     m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
 }
 
-void Renderer::CreateTexturesAndSamplers()
+void Renderer::CreateEnvironmentTexturesAndSamplers()
 {
     MipmapGenerator mipmapGenerator(m_device);
 
@@ -437,35 +474,40 @@ void Renderer::CreateTexturesAndSamplers()
     samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
     samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
     m_iblBrdfIntegrationLUTSampler = m_device.CreateSampler(&samplerDescriptor);
+}
 
+void Renderer::CreateModelTexturesAndSamplers(const Model &model)
+{
     // Check if the model has any textures
-    if (!m_model->GetMaterials().empty())
+    if (!model.GetMaterials().empty())
     {
+        MipmapGenerator mipmapGenerator(m_device);
 
         // Get the first Material from the Model for now. TODO: Support multiple materials
-        const Model::Material &material = m_model->GetMaterials().front();
+        const Model::Material &material = model.GetMaterials().front();
 
         // Base Color Texture
-        CreateTexture(m_model->GetTexture(material.m_baseColorTexture), m_device, mipmapGenerator, m_baseColorTexture,
+        CreateTexture(model.GetTexture(material.m_baseColorTexture), m_device, mipmapGenerator, m_baseColorTexture,
                       m_baseColorTextureView);
 
         // Metallic-Roughness
-        CreateTexture(m_model->GetTexture(material.m_metallicRoughnessTexture), m_device, mipmapGenerator,
+        CreateTexture(model.GetTexture(material.m_metallicRoughnessTexture), m_device, mipmapGenerator,
                       m_metallicRoughnessTexture, m_metallicRoughnessTextureView);
 
         // Normal Texture
-        CreateTexture(m_model->GetTexture(material.m_normalTexture), m_device, mipmapGenerator, m_normalTexture,
+        CreateTexture(model.GetTexture(material.m_normalTexture), m_device, mipmapGenerator, m_normalTexture,
                       m_normalTextureView);
 
         // Occlusion Texture
-        CreateTexture(m_model->GetTexture(material.m_occlusionTexture), m_device, mipmapGenerator, m_occlusionTexture,
+        CreateTexture(model.GetTexture(material.m_occlusionTexture), m_device, mipmapGenerator, m_occlusionTexture,
                       m_occlusionTextureView);
 
         // Emissive Texture
-        CreateTexture(m_model->GetTexture(material.m_emissiveTexture), m_device, mipmapGenerator, m_emissiveTexture,
+        CreateTexture(model.GetTexture(material.m_emissiveTexture), m_device, mipmapGenerator, m_emissiveTexture,
                       m_emissiveTextureView);
 
         // Create a sampler for model textures
+        wgpu::SamplerDescriptor samplerDescriptor{};
         samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
         samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
         samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
@@ -689,7 +731,7 @@ void Renderer::CreateModelBindGroup()
     m_modelBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
-void Renderer::CreateRenderPipelines()
+void Renderer::CreateModelRenderPipeline()
 {
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
     const std::string shader = LoadShaderFile("./assets/shaders/gltf_pbr.wgsl");
@@ -725,9 +767,6 @@ void Renderer::CreateRenderPipelines()
         .depthCompare = wgpu::CompareFunction::Less,
     };
 
-    CreateGlobalBindGroup();
-    CreateModelBindGroup();
-
     wgpu::BindGroupLayout bindGroupLayouts[] = {m_globalBindGroupLayout, m_modelBindGroupLayout};
 
     wgpu::PipelineLayoutDescriptor layoutDescriptor{
@@ -749,7 +788,21 @@ void Renderer::CreateRenderPipelines()
                                               .depthStencil = &depthStencilState,
                                               .fragment = &fragmentState};
 
-    m_modelPipeline = m_device.CreateRenderPipeline(&descriptor);
+    m_modelPipeline = m_device.CreateRenderPipeline(&descriptor);                                                
+}
+
+void Renderer::CreateEnvironmentRenderPipeline()
+{
+    wgpu::ColorTargetState colorTargetState{.format = m_surfaceFormat};
+
+    wgpu::FragmentState fragmentState{
+        .module = m_modelShaderModule, .entryPoint = "fragmentMain", .targetCount = 1, .targets = &colorTargetState};
+
+    wgpu::DepthStencilState depthStencilState{
+        .format = wgpu::TextureFormat::Depth24PlusStencil8,
+        .depthWriteEnabled = true,
+        .depthCompare = wgpu::CompareFunction::Less,
+    };
 
     // Create an environment pipeline
     wgpu::ShaderModuleWGSLDescriptor environmentWgslDesc{};
@@ -788,7 +841,7 @@ void Renderer::CreateRenderPipelines()
     m_environmentPipeline = m_device.CreateRenderPipeline(&environmentDescriptor);
 }
 
-void Renderer::UpdateUniforms() const
+void Renderer::UpdateUniforms(const glm::mat4 &modelMatrix) const
 {
     // Update the global uniforms
     GlobalUniforms globalUniforms;
@@ -803,7 +856,7 @@ void Renderer::UpdateUniforms() const
 
     // Update the model uniforms
     ModelUniforms modelUniforms;
-    modelUniforms.modelMatrix = m_model->GetTransform();
+    modelUniforms.modelMatrix = modelMatrix;
 
     // Compute the normal matrix as a 3x3 matrix (inverse transpose of the model matrix)
     glm::mat3 normalMatrix3x3 = glm::transpose(glm::inverse(glm::mat3(modelUniforms.modelMatrix)));

@@ -23,12 +23,16 @@ class Camera
     void Tumble(int dx, int dy);
     void Zoom(int dx, int dy);
     void Pan(int dx, int dy);
+    void SetPosition(const glm::vec3 &position);
+    void SetTarget(const glm::vec3 &target);
+    void SetNearFarPlanes(float near, float far);
     void ResizeViewport(int width, int height);
 
     // Accessors
     glm::mat4 GetViewMatrix() const noexcept;
     glm::mat4 GetProjectionMatrix() const noexcept;
     glm::vec3 GetWorldPosition() const noexcept;
+    float GetFOV() const noexcept;
 
   private:
     // Updates the camera's basis vectors (forward, right, and up)

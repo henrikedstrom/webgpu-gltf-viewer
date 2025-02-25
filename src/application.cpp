@@ -42,6 +42,24 @@ void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     }
 }
 
+void RepositionCamera(Camera &camera, const Model &model)
+{
+    glm::vec3 minBounds, maxBounds;
+    model.GetBounds(minBounds, maxBounds);
+
+    glm::vec3 center = (minBounds + maxBounds) * 0.5f;
+    float radius = glm::length(maxBounds - minBounds) * 0.5f;
+    float distance = radius / sin(glm::radians(camera.GetFOV() * 0.5f));
+
+    // Calculate the camera position
+    glm::vec3 position = center + glm::vec3(0.0f, 0.0f, distance);
+
+    // Update the camera
+    camera.SetPosition(position);
+    camera.SetTarget(center);
+    camera.SetNearFarPlanes(radius * 0.01f, distance + radius * 100.0f);
+}
+
 } // namespace
 
 //----------------------------------------------------------------------
@@ -86,13 +104,17 @@ void Application::Run()
     glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow *window, int width, int height) {
         Application::GetInstance()->OnResize(width, height);
     });
+    glfwSetDropCallback(m_window, [](GLFWwindow *window, int count, const char **paths) {
+        Application::GetInstance()->OnFileDropped(count, paths);
+    });
 
     m_environment.Load("./assets/environments/helipad.hdr");
 
     m_model.Load("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
-    //m_model.Load("./assets/models/SciFiHelmet/SciFiHelmet.gltf");
+    // m_model.Load("./assets/models/SciFiHelmet/SciFiHelmet.gltf");
+    RepositionCamera(m_camera, m_model);
 
-    m_renderer.Initialize(m_window, &m_camera, &m_environment, &m_model, m_width, m_height, [this]() { MainLoop(); });
+    m_renderer.Initialize(m_window, &m_camera, &m_environment, m_model, m_width, m_height, [this]() { MainLoop(); });
 }
 
 void Application::MainLoop()
@@ -116,7 +138,7 @@ void Application::ProcessFrame()
     m_model.Update(0.01f, m_animateModel);
 
     // Render a frame
-    m_renderer.Render();
+    m_renderer.Render(m_model.GetTransform());
 }
 
 void Application::OnKeyPressed(int key)
@@ -133,6 +155,10 @@ void Application::OnKeyPressed(int key)
     {
         m_renderer.ReloadShaders();
     }
+    else if (key == GLFW_KEY_HOME)
+    {
+        RepositionCamera(m_camera, m_model);
+    }
 }
 
 void Application::OnResize(int width, int height)
@@ -141,4 +167,16 @@ void Application::OnResize(int width, int height)
     m_height = height;
     m_camera.ResizeViewport(width, height);
     m_renderer.Resize(width, height);
+}
+
+void Application::OnFileDropped(int count, const char **paths)
+{
+    if (count > 0)
+    {
+        std::string filepath = paths[0]; // Load only the first file
+        std::cout << "Loading model: " << filepath << std::endl;
+        m_model.Load(filepath);
+        RepositionCamera(m_camera, m_model);
+        m_renderer.UpdateModel(m_model);
+    }
 }

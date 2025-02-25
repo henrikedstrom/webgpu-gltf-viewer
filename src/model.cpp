@@ -1,5 +1,6 @@
 // Standard Library Headers
 #include <iostream>
+#include <limits>
 
 // Third-Party Library Headers
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -26,8 +27,11 @@ namespace
 constexpr float PI = 3.14159265358979323846f;
 
 void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::vector<Model::Vertex> &vertices,
-                 std::vector<uint32_t> &indices)
+                 std::vector<uint32_t> &indices, const glm::mat4 &transform)
 {
+    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(transform)));
+    glm::mat3 tangentMatrix = glm::mat3(transform);
+
     for (const auto &primitive : mesh.primitives)
     {
         // Access vertex positions
@@ -102,23 +106,28 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             Model::Vertex vertex;
 
             // Position
-            vertex.m_position = glm::vec3(positionData[i * 3 + 0], positionData[i * 3 + 1], positionData[i * 3 + 2]);
+            glm::vec4 pos = glm::vec4(positionData[i * 3 + 0], positionData[i * 3 + 1], positionData[i * 3 + 2], 1.0f);
+            vertex.m_position = glm::vec3(transform * pos);
 
             // Normal (default to 0, 0, 1 if not provided)
             if (normalData)
             {
-                vertex.m_normal = glm::vec3(normalData[i * 3 + 0], normalData[i * 3 + 1], normalData[i * 3 + 2]);
+                vertex.m_normal = glm::normalize(
+                    normalMatrix * glm::vec3(normalData[i * 3 + 0], normalData[i * 3 + 1], normalData[i * 3 + 2]));
             }
             else
             {
-                vertex.m_normal = glm::vec3(0.0f, 0.0f, 1.0f);
+                vertex.m_normal = glm::normalize(normalMatrix * glm::vec3(0.0f, 0.0f, 1.0f));
             }
 
             // Tangent (default to 0, 0, 0, 1 if not provided)
             if (tangentData)
             {
-                vertex.m_tangent = glm::vec4(tangentData[i * 4 + 0], tangentData[i * 4 + 1], tangentData[i * 4 + 2],
-                                             tangentData[i * 4 + 3]);
+                glm::vec3 transformedTangent =
+                    tangentMatrix * glm::vec3(tangentData[i * 4 + 0], tangentData[i * 4 + 1], tangentData[i * 4 + 2]);
+
+                vertex.m_tangent =
+                    glm::vec4(glm::normalize(transformedTangent), tangentData[i * 4 + 3]); // Preserve handedness (w)
             }
             else
             {
@@ -180,6 +189,55 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
                 indices.insert(indices.end(), data, data + indexAccessor.count);
             }
         }
+    }
+}
+
+void ProcessNode(const tinygltf::Model &model, int nodeIndex, const glm::mat4 &parentTransform,
+                 std::vector<Model::Vertex> &vertices, std::vector<uint32_t> &indices)
+{
+    const tinygltf::Node &node = model.nodes[nodeIndex];
+
+    // Compute the local transformation matrix
+    glm::mat4 localTransform(1.0f);
+
+    // If the node has a transformation matrix, use it
+    if (!node.matrix.empty())
+    {
+        localTransform = glm::make_mat4(node.matrix.data());
+    }
+    else
+    {
+        // Otherwise, compute the transformation from translation, rotation, and scale
+        if (!node.translation.empty())
+        {
+            localTransform = glm::translate(localTransform,
+                                            glm::vec3(node.translation[0], node.translation[1], node.translation[2]));
+        }
+        if (!node.rotation.empty())
+        {
+            glm::quat rotationQuat = glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]);
+            localTransform *= glm::mat4_cast(rotationQuat);
+        }
+        if (!node.scale.empty())
+        {
+            localTransform = glm::scale(localTransform, glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
+        }
+    }
+
+    // Combine with parent transform
+    glm::mat4 globalTransform = parentTransform * localTransform;
+
+    // If this node has a mesh, process it
+    if (node.mesh >= 0)
+    {
+        const tinygltf::Mesh &mesh = model.meshes[node.mesh];
+        ProcessMesh(model, mesh, vertices, indices, globalTransform);
+    }
+
+    // Recursively process children nodes
+    for (int childIndex : node.children)
+    {
+        ProcessNode(model, childIndex, globalTransform, vertices, indices);
     }
 }
 
@@ -263,11 +321,14 @@ void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std
 
 void Model::Load(const std::string &filename)
 {
-    m_transform = glm::mat4(1.0f); // Reset the model transformation matrix
-    m_rotationAngle = 0.0f;        // Reset the model rotation angle
-    m_vertices.clear();            // Clear the vertex data
-    m_indices.clear();             // Clear the index data
-    m_materials.clear();           // Clear the material data
+    m_transform = glm::mat4(1.0f);                              // Reset the model transformation matrix
+    m_rotationAngle = 0.0f;                                     // Reset the model rotation angle
+    m_minBounds = glm::vec3(std::numeric_limits<float>::max()); // Reset the minimum bounds
+    m_maxBounds = glm::vec3(std::numeric_limits<float>::min()); // Reset the maximum bounds
+    m_vertices.clear();                                         // Clear the vertex data
+    m_indices.clear();                                          // Clear the index data
+    m_materials.clear();                                        // Clear the material data
+    m_textures.clear();                                         // Clear the texture data
 
     const std::string basePath = filename.substr(0, filename.find_last_of("/"));
 
@@ -280,9 +341,21 @@ void Model::Load(const std::string &filename)
 
     if (result)
     {
-        for (const auto &mesh : model.meshes)
+        if (model.scenes.size() > 0)
         {
-            ProcessMesh(model, mesh, m_vertices, m_indices);
+            const tinygltf::Scene &scene = model.scenes[model.defaultScene > -1 ? model.defaultScene : 0];
+
+            for (int nodeIndex : scene.nodes)
+            {
+                ProcessNode(model, nodeIndex, glm::mat4(1.0f), m_vertices, m_indices);
+            }
+
+            // Calculate the bounding box of the model
+            for (const auto &vertex : m_vertices)
+            {
+                m_minBounds = glm::min(m_minBounds, vertex.m_position);
+                m_maxBounds = glm::max(m_maxBounds, vertex.m_position);
+            }
         }
 
         for (const auto &material : model.materials)
@@ -294,10 +367,6 @@ void Model::Load(const std::string &filename)
         {
             ProcessImage(image, basePath, m_textures);
         }
-
-        // Rotation to correct orientation (90 degrees in radians for X-axis)
-        float xAxisAngle = PI / 2.0f; // 90 degrees
-        m_transform = glm::rotate(glm::mat4(1.0f), xAxisAngle, glm::vec3(1.0f, 0.0f, 0.0f));
     }
     else
     {
@@ -316,8 +385,8 @@ void Model::Update(float deltaTime, bool animate)
         }
     }
 
-    // Optional - rotation to correct orientation 
-    float xAxisAngle = PI / 2.0f; // 90 degrees
+    // Optional - rotation to correct orientation
+    float xAxisAngle = 0.0f; // PI / 2.0f; // 90 degrees
     glm::mat4 xRotationMatrix = glm::rotate(glm::mat4(1.0f), xAxisAngle, glm::vec3(1.0f, 0.0f, 0.0f));
 
     // Create the Y-axis rotation matrix (dynamic rotation angle)
@@ -330,6 +399,12 @@ void Model::Update(float deltaTime, bool animate)
 const glm::mat4 &Model::GetTransform() const noexcept
 {
     return m_transform;
+}
+
+void Model::GetBounds(glm::vec3 &minBounds, glm::vec3 &maxBounds) const noexcept
+{
+    minBounds = m_minBounds;
+    maxBounds = m_maxBounds;
 }
 
 const std::vector<Model::Vertex> &Model::GetVertices() const noexcept

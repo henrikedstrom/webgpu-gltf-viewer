@@ -60,6 +60,7 @@ class Model
 
     // Accessors
     const glm::mat4 &GetTransform() const noexcept;
+    void GetBounds(glm::vec3 &minBounds, glm::vec3 &maxBounds) const noexcept;
     const std::vector<Vertex> &GetVertices() const noexcept;
     const std::vector<uint32_t> &GetIndices() const noexcept;
     const std::vector<Material> &GetMaterials() const noexcept;
@@ -70,6 +71,8 @@ class Model
     // Private Member Variables
     glm::mat4 m_transform{1.0f};  // Model transformation matrix
     float m_rotationAngle = 0.0f; // Model rotation angle
+    glm::vec3 m_minBounds;        // Minimum bounds of the model
+    glm::vec3 m_maxBounds;        // Maximum bounds of the model
     std::vector<Vertex> m_vertices;
     std::vector<uint32_t> m_indices;
     std::vector<Material> m_materials;
