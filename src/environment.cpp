@@ -23,18 +23,27 @@
 namespace
 {
 
+int FloorPow2(int x)
+{
+    int power = 1;
+    while (power * 2 <= x)
+        power *= 2;
+    return power;
+}
+
 void LoadTexture(const std::string &filename, Environment::Texture &texture)
 {
     // Load the texture
-    int width, height, components;
-    float *data = stbi_loadf(filename.c_str(), &width, &height, &components, 4 /* force 4 channels */);
+    int width, height, channels;
+    float *data = stbi_loadf(filename.c_str(), &width, &height, &channels, 4 /* force 4 channels */);
     if (!data)
     {
         std::cerr << "Failed to load image: " << filename << std::endl;
         std::cerr << "stb_image failure: " << stbi_failure_reason() << std::endl;
         return;
     }
-    if (width != 2 * height) {
+    if (width != 2 * height)
+    {
         std::cerr << "Error: Texture must have a 2:1 aspect ratio. Received: " << width << "x" << height << std::endl;
         stbi_image_free(data);
         return;
@@ -46,10 +55,10 @@ void LoadTexture(const std::string &filename, Environment::Texture &texture)
     auto start = std::chrono::high_resolution_clock::now();
 
     // Force 4 channels
-    components = 4;
+    constexpr int components = 4;
 
     // Resample to cubemap faces
-    const int cubemapSize = height; // Size of each cubemap face
+    const int cubemapSize = FloorPow2(height);
     texture.m_width = cubemapSize;
     texture.m_height = cubemapSize;
     texture.m_components = components;
@@ -102,7 +111,8 @@ void LoadTexture(const std::string &filename, Environment::Texture &texture)
                 // Convert direction to spherical coordinates
                 float theta = acos(dir.y);       // Polar angle [0, π]
                 float phi = atan2(dir.z, dir.x); // Azimuthal angle [-π, π]
-                if (phi < 0.0f) {
+                if (phi < 0.0f)
+                {
                     phi += glm::two_pi<float>(); // Normalize to [0, 2π]
                 }
 
@@ -146,7 +156,6 @@ void LoadTexture(const std::string &filename, Environment::Texture &texture)
 
     // Free the image data
     stbi_image_free(data);
-
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
