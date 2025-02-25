@@ -61,6 +61,10 @@ void OrbitControls::MouseButtonCallback(GLFWwindow *window, int button, int acti
         return;
     }
 
+    double xpos, ypos;
+    glfwGetCursorPos(window, &xpos, &ypos);
+    controls->m_mouseLastPos = glm::vec2(xpos, ypos);
+
     if (button == GLFW_MOUSE_BUTTON_LEFT)
     {
         switch (action)
@@ -74,14 +78,22 @@ void OrbitControls::MouseButtonCallback(GLFWwindow *window, int button, int acti
             {
                 controls->m_mouseTumble = true;
             }
-            double xpos, ypos;
-            glfwGetCursorPos(window, &xpos, &ypos);
-            controls->m_mouseLastPos = glm::vec2(xpos, ypos);
             break;
         case GLFW_RELEASE:
             controls->m_mouseTumble = false;
             controls->m_mousePan = false;
             break;
+        }
+    }
+    else if (button == GLFW_MOUSE_BUTTON_MIDDLE)
+    {
+        if (action == GLFW_PRESS)
+        {
+            controls->m_mousePan = true;
+        }
+        else if (action == GLFW_RELEASE)
+        {
+            controls->m_mousePan = false;
         }
     }
 }
