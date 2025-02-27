@@ -35,7 +35,8 @@ class Environment
     Environment &operator=(Environment &&) = default;
 
     // Public Interface
-    void Load(const std::string &filename);
+    void LoadFromFile(const std::string &filename);
+    void LoadFromMemory(const uint8_t *data, uint32_t size);
     void UpdateRotation(float rotationAngle);
 
     // Accessors

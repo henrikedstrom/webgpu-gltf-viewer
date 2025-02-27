@@ -5,6 +5,7 @@
 #include <GLFW/glfw3.h>
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
+#include <emscripten/html5.h>
 #endif
 
 // Project Headers
@@ -12,6 +13,102 @@
 
 // Static Application Instance
 Application *Application::s_instance = nullptr;
+
+//----------------------------------------------------------------------
+// Emscripten-specific functions
+
+#if defined(__EMSCRIPTEN__)
+
+extern "C" void wasm_OnDropFile(const char *filename, uint8_t *data, int length)
+{
+    std::string filenameStr(filename);
+    Application::GetInstance()->OnFileDropped(filenameStr, data, length);
+}
+
+void EmscriptenSetDropCallback()
+{
+    // Set up the drop event listener in JavaScript
+    EM_ASM(
+
+        function showErrorPopup(message) {
+            let popup = document.createElement("div");
+            popup.innerText = message;
+            popup.style.position = "fixed";
+            popup.style.top = "50%";
+            popup.style.left = "50%";
+            popup.style.transform = "translate(-50%, -50%)";
+            popup.style.backgroundColor = "rgba(255, 0, 0, 0.8)";
+            popup.style.color = "white";
+            popup.style.padding = "15px 25px";
+            popup.style.borderRadius = "8px";
+            popup.style.fontSize = "18px";
+            popup.style.fontWeight = "bold";
+            popup.style.zIndex = "1000";
+
+            document.body.appendChild(popup);
+
+            setTimeout(() => {
+                popup.remove();
+            }, 3000); // Auto-hide after 3 seconds
+
+            console.error('ERROR: ' + message);
+        }
+
+        var canvas = document.getElementById('canvas');
+
+        canvas.ondragover = function(event) { event.preventDefault(); };
+
+        canvas.ondrop = async function (event) {
+            event.preventDefault();
+        
+            let file = event.dataTransfer.files[0];
+            if (!file) return;
+        
+            var extension = file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
+            if (extension != "glb" && extension != "hdr") {
+                showErrorPopup("Unsupported file type: " + file.name + ". Only .glb and .hdr files are supported.");
+                return;
+            }
+        
+            console.log(`Dropped file: ${file.name} (Size: ${file.size} bytes)`);
+        
+            let reader = new FileReader();
+            reader.onload = function (e) {
+                let data = new Uint8Array(e.target.result);
+        
+                let dataPtr = Module._malloc(data.length);
+                if (!dataPtr) {
+                    showErrorPopup("Memory allocation failed for file data!");
+                    return;
+                }
+                Module.HEAPU8.set(data, dataPtr);
+        
+                let nameLength = Module.lengthBytesUTF8(file.name) + 1;
+                let filenamePtr = Module._malloc(nameLength);
+                if (!filenamePtr) {
+                    showErrorPopup("Memory allocation failed for filename!");
+                    Module._free(dataPtr);
+                    return;
+                }
+                Module.stringToUTF8(file.name, filenamePtr, nameLength);
+        
+                console.log(`Sending file '${file.name}' (Size: ${data.length} bytes) to C++`);
+                Module.ccall(
+                    "wasm_OnDropFile",
+                    "void",
+                    ["number", "number", "number"],
+                    [filenamePtr, dataPtr, data.length]
+                );
+        
+                Module._free(dataPtr);
+                Module._free(filenamePtr);
+            };
+            reader.readAsArrayBuffer(file);
+        };
+    );
+}
+
+#endif // defined(__EMSCRIPTEN__)
 
 //----------------------------------------------------------------------
 // Internal Utility Functions
@@ -106,13 +203,20 @@ void Application::Run()
     glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow *window, int width, int height) {
         Application::GetInstance()->OnResize(width, height);
     });
+
+    // Setup file drop callback
+    // Note: Emscripten requires a different approach for file drops to work correctly in the browser environment.
+#ifdef __EMSCRIPTEN__
+    EmscriptenSetDropCallback();
+#else
     glfwSetDropCallback(m_window, [](GLFWwindow *window, int count, const char **paths) {
         Application::GetInstance()->OnFileDropped(count, paths);
     });
+#endif
 
-    m_environment.Load("./assets/environments/helipad.hdr");
+    m_environment.LoadFromFile("./assets/environments/helipad.hdr");
 
-    m_model.Load("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
+    m_model.LoadFromFile("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
     // m_model.Load("./assets/models/SciFiHelmet/SciFiHelmet.gltf");
     RepositionCamera(m_camera, m_model);
 
@@ -184,19 +288,43 @@ void Application::OnFileDropped(int count, const char **paths)
         if (extension == "gltf" || extension == "glb")
         {
             std::cout << "Loading model: " << filepath << std::endl;
-            m_model.Load(filepath);
+            m_model.LoadFromFile(filepath);
             RepositionCamera(m_camera, m_model);
             m_renderer.UpdateModel(m_model);
         }
         else if (extension == "hdr")
         {
             std::cout << "Loading environment: " << filepath << std::endl;
-            m_environment.Load(filepath);
+            m_environment.LoadFromFile(filepath);
             m_renderer.UpdateEnvironment(m_environment);
         }
         else
         {
             std::cerr << "Unsupported file type: " << filepath << std::endl;
         }
+    }
+}
+
+void Application::OnFileDropped(const std::string &filename, uint8_t *data, int length)
+{
+    std::string extension = filename.substr(filename.find_last_of(".") + 1);
+    std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+
+    if (extension == "glb")
+    {
+        std::cout << "Loading model: " << filename << std::endl;
+        m_model.LoadFromMemory(data, length);
+        RepositionCamera(m_camera, m_model);
+        m_renderer.UpdateModel(m_model);
+    }
+    else if (extension == "hdr")
+    {
+        std::cout << "Loading environment: " << filename << std::endl;
+        m_environment.LoadFromMemory(data, length);
+        m_renderer.UpdateEnvironment(m_environment);
+    }
+    else
+    {
+        std::cerr << "Unsupported file type: " << filename << std::endl;
     }
 }

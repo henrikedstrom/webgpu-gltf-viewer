@@ -36,6 +36,7 @@ class Application
     void OnKeyPressed(int key);
     void OnResize(int width, int height);
     void OnFileDropped(int count, const char **paths);
+    void OnFileDropped(const std::string &filename, uint8_t *data, int length);
 
   private:
     // Private Member Functions

@@ -67,7 +67,9 @@ if(EMSCRIPTEN)
     -sUSE_GLFW=3 
     -sALLOW_MEMORY_GROWTH=1 
     -O3
-    --preload-file ${CMAKE_SOURCE_DIR}/assets@/assets 
+    --preload-file "${CMAKE_SOURCE_DIR}/assets@/assets"
+    "-sEXPORTED_FUNCTIONS=[\"_wasm_OnDropFile\", \"_main\", \"_malloc\", \"_free\"]"
+    "-sEXPORTED_RUNTIME_METHODS=[\"ccall\", \"cwrap\", \"stringToUTF8\", \"lengthBytesUTF8\"]"
   )
 else()
   # Non-Emscripten settings

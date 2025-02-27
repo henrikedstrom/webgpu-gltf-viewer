@@ -55,7 +55,8 @@ class Model
     Model &operator=(Model &&) = default;
 
     // Public Interface
-    void Load(const std::string &filename);
+    void LoadFromFile(const std::string &filename);
+    void LoadFromMemory(const uint8_t *data, uint32_t size);
     void Update(float deltaTime, bool animate);
 
     // Accessors
