@@ -458,7 +458,7 @@ void Renderer::CreateEnvironmentTexturesAndSamplers()
     MipmapGenerator mipmapGenerator(m_device);
 
     // Create environment textures
-    CreateTextureCube(&m_environment->GetBackgroundTexture(), m_device, mipmapGenerator, m_environmentTexture,
+    CreateTextureCube(&m_environment->GetTexture(), m_device, mipmapGenerator, m_environmentTexture,
                       m_environmentTextureView);
 
     // Create IBL precomputed maps

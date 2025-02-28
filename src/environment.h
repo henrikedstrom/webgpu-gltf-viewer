@@ -35,16 +35,15 @@ class Environment
     Environment &operator=(Environment &&) = default;
 
     // Public Interface
-    void LoadFromFile(const std::string &filename);
-    void LoadFromMemory(const uint8_t *data, uint32_t size);
+    void Load(const std::string &filename, const uint8_t *data = 0, uint32_t size = 0);
     void UpdateRotation(float rotationAngle);
 
     // Accessors
     const glm::mat4 &GetTransform() const noexcept;
-    const Texture &GetBackgroundTexture() const noexcept;
+    const Texture &GetTexture() const noexcept;
 
   private:
     // Private Member Variables
     glm::mat4 m_transform{1.0f};
-    Texture m_backgroundTexture;
+    Texture m_texture;
 };

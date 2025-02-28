@@ -314,123 +314,70 @@ void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std
     textures.push_back(texture);
 }
 
+void ProcessModel(const tinygltf::Model &model, std::vector<Model::Vertex> &vertices, std::vector<uint32_t> &indices,
+                  std::vector<Model::Material> &materials, std::vector<Model::Texture> &textures)
+{
+    if (model.scenes.size() > 0)
+    {
+        const tinygltf::Scene &scene = model.scenes[model.defaultScene > -1 ? model.defaultScene : 0];
+
+        for (int nodeIndex : scene.nodes)
+        {
+            ProcessNode(model, nodeIndex, glm::mat4(1.0f), vertices, indices);
+        }
+    }
+
+    for (const auto &material : model.materials)
+    {
+        ProcessMaterial(material, materials);
+    }
+
+    for (const auto &image : model.images)
+    {
+        ProcessImage(image, "", textures);
+    }
+}
+
 } // namespace
 
 //----------------------------------------------------------------------
 // Model Class Implementation
 
-void Model::LoadFromFile(const std::string &filename)
+void Model::Load(const std::string &filename, const uint8_t *data, uint32_t size)
 {
-    m_transform = glm::mat4(1.0f);                              // Reset the model transformation matrix
-    m_rotationAngle = 0.0f;                                     // Reset the model rotation angle
-    m_minBounds = glm::vec3(std::numeric_limits<float>::max()); // Reset the minimum bounds
-    m_maxBounds = glm::vec3(std::numeric_limits<float>::min()); // Reset the maximum bounds
-    m_vertices.clear();                                         // Clear the vertex data
-    m_indices.clear();                                          // Clear the index data
-    m_materials.clear();                                        // Clear the material data
-    m_textures.clear();                                         // Clear the texture data
-
-    const std::string basePath = filename.substr(0, filename.find_last_of("/"));
-
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
     std::string err;
     std::string warn;
-
-    // Determine file extension
-    std::string extension = filename.substr(filename.find_last_of(".") + 1);
     bool result = false;
 
-    if (extension == "gltf") {
-        result = loader.LoadASCIIFromFile(&model, &err, &warn, filename);
-    } else if (extension == "glb") {
-        result = loader.LoadBinaryFromFile(&model, &err, &warn, filename);
-    } else {
-        std::cerr << "Unsupported file format: " << extension << std::endl;
-        return;
+    if (data) {
+        // Load from memory, binary file
+        result = loader.LoadBinaryFromMemory(&model, &err, &warn, data, size);
+    }
+    else {
+        // Load from file, either ASCII or binary
+    
+        const std::string basePath = filename.substr(0, filename.find_last_of("/"));
+        std::string extension = filename.substr(filename.find_last_of(".") + 1);
+        
+
+        if (extension == "gltf") {
+            result = loader.LoadASCIIFromFile(&model, &err, &warn, filename);
+        } else if (extension == "glb") {
+            result = loader.LoadBinaryFromFile(&model, &err, &warn, filename);
+        } else {
+            std::cerr << "Unsupported file format: " << extension << std::endl;
+            return;
+        }
     }
 
+    // If succesful, process the model
     if (result)
     {
-        if (model.scenes.size() > 0)
-        {
-            const tinygltf::Scene &scene = model.scenes[model.defaultScene > -1 ? model.defaultScene : 0];
-
-            for (int nodeIndex : scene.nodes)
-            {
-                ProcessNode(model, nodeIndex, glm::mat4(1.0f), m_vertices, m_indices);
-            }
-
-            // Calculate the bounding box of the model
-            for (const auto &vertex : m_vertices)
-            {
-                m_minBounds = glm::min(m_minBounds, vertex.m_position);
-                m_maxBounds = glm::max(m_maxBounds, vertex.m_position);
-            }
-        }
-
-        for (const auto &material : model.materials)
-        {
-            ProcessMaterial(material, m_materials);
-        }
-
-        for (const auto &image : model.images)
-        {
-            ProcessImage(image, basePath, m_textures);
-        }
-    }
-    else
-    {
-        std::cerr << "Failed to load model: " << err << std::endl;
-    }
-}
-
-void Model::LoadFromMemory(const uint8_t *data, uint32_t size)
-{
-    m_transform = glm::mat4(1.0f);                              // Reset the model transformation matrix
-    m_rotationAngle = 0.0f;                                     // Reset the model rotation angle
-    m_minBounds = glm::vec3(std::numeric_limits<float>::max()); // Reset the minimum bounds
-    m_maxBounds = glm::vec3(std::numeric_limits<float>::min()); // Reset the maximum bounds
-    m_vertices.clear();                                         // Clear the vertex data
-    m_indices.clear();                                          // Clear the index data
-    m_materials.clear();                                        // Clear the material data
-    m_textures.clear();                                         // Clear the texture data
-
-    tinygltf::Model model;
-    tinygltf::TinyGLTF loader;
-    std::string err;
-    std::string warn;
-
-    bool result = loader.LoadBinaryFromMemory(&model, &err, &warn, data, size);
-
-    if (result)
-    {
-        if (model.scenes.size() > 0)
-        {
-            const tinygltf::Scene &scene = model.scenes[model.defaultScene > -1 ? model.defaultScene : 0];
-
-            for (int nodeIndex : scene.nodes)
-            {
-                ProcessNode(model, nodeIndex, glm::mat4(1.0f), m_vertices, m_indices);
-            }
-
-            // Calculate the bounding box of the model
-            for (const auto &vertex : m_vertices)
-            {
-                m_minBounds = glm::min(m_minBounds, vertex.m_position);
-                m_maxBounds = glm::max(m_maxBounds, vertex.m_position);
-            }
-        }
-
-        for (const auto &material : model.materials)
-        {
-            ProcessMaterial(material, m_materials);
-        }
-
-        for (const auto &image : model.images)
-        {
-            ProcessImage(image, "", m_textures);
-        }
+        ClearData();
+        ProcessModel(model, m_vertices, m_indices, m_materials, m_textures);
+        RecomputeBounds();
     }
     else
     {
@@ -449,15 +396,7 @@ void Model::Update(float deltaTime, bool animate)
         }
     }
 
-    // Optional - rotation to correct orientation
-    float xAxisAngle = 0.0f; // PI / 2.0f; // 90 degrees
-    glm::mat4 xRotationMatrix = glm::rotate(glm::mat4(1.0f), xAxisAngle, glm::vec3(1.0f, 0.0f, 0.0f));
-
-    // Create the Y-axis rotation matrix (dynamic rotation angle)
-    glm::mat4 yRotationMatrix = glm::rotate(glm::mat4(1.0f), -m_rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
-
-    // Combine the rotations: apply X-axis rotation first, then Y-axis rotation
-    m_transform = yRotationMatrix * xRotationMatrix;
+    m_transform = glm::rotate(glm::mat4(1.0f), -m_rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
 }
 
 const glm::mat4 &Model::GetTransform() const noexcept
@@ -498,4 +437,29 @@ const Model::Texture *Model::GetTexture(int index) const noexcept
         return &m_textures[index];
     }
     return nullptr;
+}
+
+void Model::ClearData()
+{
+    m_transform = glm::mat4(1.0f);
+    m_rotationAngle = 0.0f;
+    m_minBounds = glm::vec3(std::numeric_limits<float>::max());
+    m_maxBounds = glm::vec3(std::numeric_limits<float>::min());
+    m_vertices.clear();
+    m_indices.clear();
+    m_materials.clear();
+    m_textures.clear();
+}
+
+void Model::RecomputeBounds()
+{
+    m_minBounds = glm::vec3(std::numeric_limits<float>::max());
+    m_maxBounds = glm::vec3(std::numeric_limits<float>::min());
+
+    // Calculate the bounding box of the model
+    for (const auto &vertex : m_vertices)
+    {
+        m_minBounds = glm::min(m_minBounds, vertex.m_position);
+        m_maxBounds = glm::max(m_maxBounds, vertex.m_position);
+    }
 }

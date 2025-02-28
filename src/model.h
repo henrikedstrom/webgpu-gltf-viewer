@@ -55,8 +55,7 @@ class Model
     Model &operator=(Model &&) = default;
 
     // Public Interface
-    void LoadFromFile(const std::string &filename);
-    void LoadFromMemory(const uint8_t *data, uint32_t size);
+    void Load(const std::string &filename, const uint8_t *data = 0, uint32_t size = 0);
     void Update(float deltaTime, bool animate);
 
     // Accessors
@@ -69,6 +68,10 @@ class Model
     const Texture *GetTexture(int index) const noexcept;
 
   private:
+    // Private Member Functions
+    void ClearData();
+    void RecomputeBounds();
+
     // Private Member Variables
     glm::mat4 m_transform{1.0f};  // Model transformation matrix
     float m_rotationAngle = 0.0f; // Model rotation angle

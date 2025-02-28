@@ -142,63 +142,52 @@ void LoadTexture(Environment::Texture &texture, int width, int height, const flo
               << cubemapSize << "x6) in " << elapsed.count() << " seconds" << std::endl;
 }
 
+template <typename LoaderFunc, typename... Args> 
+void LoadFromSource(Environment::Texture &texture, LoaderFunc loader, Args &&...args)
+{
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+
+    // Call the provided loader (either stbi_loadf or stbi_loadf_from_memory)
+    float *data = loader(std::forward<Args>(args)..., &width, &height, &channels, 4);
+
+    if (!data)
+    {
+        std::cerr << "Failed to load image." << std::endl;
+        std::cerr << "stb_image failure: " << stbi_failure_reason() << std::endl;
+        return;
+    }
+
+    if (width != 2 * height)
+    {
+        std::cerr << "Error: Texture must have a 2:1 aspect ratio. Received: " << width << "x" << height << std::endl;
+        stbi_image_free(data);
+        return;
+    }
+
+    LoadTexture(texture, width, height, data);
+    
+    std::cout << "Loaded environment texture (" << width << "x" << height << ")" << std::endl;
+    
+    stbi_image_free(data);
+}
+
 } // namespace
 
 //----------------------------------------------------------------------
 // Environment Class Implementation
 
-void Environment::LoadFromFile(const std::string &filename)
+void Environment::Load(const std::string &filename, const uint8_t *data, uint32_t size)
 {
-    m_transform = glm::mat4(1.0f); // Reset the environment transformation matrix
-
-    // Load the texture
-    int width, height, channels;
-    float *data = stbi_loadf(filename.c_str(), &width, &height, &channels, 4 /* force 4 channels */);
-    if (!data)
-    {
-        std::cerr << "Failed to load image: " << filename << std::endl;
-        std::cerr << "stb_image failure: " << stbi_failure_reason() << std::endl;
-        return;
+    if (data) {
+        LoadFromSource(m_texture, stbi_loadf_from_memory, data, size);
     }
-    if (width != 2 * height)
-    {
-        std::cerr << "Error: Texture must have a 2:1 aspect ratio. Received: " << width << "x" << height << std::endl;
-        stbi_image_free(data);
-        return;
+    else {
+        LoadFromSource(m_texture, stbi_loadf, filename.c_str());
     }
 
-    std::cout << "Loaded environment texture: " << filename << " (" << width << "x" << height << ")" << std::endl;
-
-    LoadTexture(m_backgroundTexture, width, height, data);
-    
-    // Free the image data
-    stbi_image_free(data);
-}
-
-void Environment::LoadFromMemory(const uint8_t *buffer, uint32_t size)
-{
-    m_transform = glm::mat4(1.0f); // Reset the environment transformation matrix
-
-    // Load the texture
-    int width, height, channels;
-    float *data = stbi_loadf_from_memory(buffer, size, &width, &height, &channels, 4 /* force 4 channels */);
-    if (!data)
-    {
-        std::cerr << "Failed to load image from memory." << std::endl;
-        std::cerr << "stb_image failure: " << stbi_failure_reason() << std::endl;
-        return;
-    }
-    if (width != 2 * height)
-    {
-        std::cerr << "Error: Texture must have a 2:1 aspect ratio. Received: " << width << "x" << height << std::endl;
-        stbi_image_free(data);
-        return;
-    }
-
-    LoadTexture(m_backgroundTexture, width, height, data);
-
-    // Free the image data
-    stbi_image_free(data);
+    m_transform = glm::mat4(1.0f);
 }
 
 void Environment::UpdateRotation(float rotationAngle)
@@ -212,7 +201,7 @@ const glm::mat4 &Environment::GetTransform() const noexcept
     return m_transform;
 }
 
-const Environment::Texture &Environment::GetBackgroundTexture() const noexcept
+const Environment::Texture &Environment::GetTexture() const noexcept
 {
-    return m_backgroundTexture;
+    return m_texture;
 }
