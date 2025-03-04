@@ -45,6 +45,12 @@ class Model
         std::vector<uint8_t> m_data; // Raw pixel data
     };
 
+    struct SubMesh {
+      uint32_t m_firstIndex = 0; // First index in the index buffer
+      uint32_t m_indexCount = 0; // Number of indices in the submesh
+      int m_materialIndex = -1;  // Material index for the submesh
+    };
+
     // Constructor
     Model() = default;
 
@@ -66,6 +72,7 @@ class Model
     const std::vector<Material> &GetMaterials() const noexcept;
     const std::vector<Texture> &GetTextures() const noexcept;
     const Texture *GetTexture(int index) const noexcept;
+    const std::vector<SubMesh> &GetSubMeshes() const noexcept;
 
   private:
     // Private Member Functions
@@ -81,4 +88,5 @@ class Model
     std::vector<uint32_t> m_indices;
     std::vector<Material> m_materials;
     std::vector<Texture> m_textures;
+    std::vector<SubMesh> m_subMeshes;
 };

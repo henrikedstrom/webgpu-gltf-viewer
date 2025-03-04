@@ -106,7 +106,6 @@ template <typename TextureInfo>
 void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, MipmapGenerator &mipmapGenerator,
                        wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
-
     uint32_t width = textureInfo->m_width;
     uint32_t height = textureInfo->m_height;
 
@@ -159,8 +158,8 @@ void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, Mipm
     textureView = texture.CreateView(&viewDescriptor);
 }
 
-void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension type, wgpu::Extent3D size, bool mipmapping,
-                              wgpu::Texture &texture, wgpu::TextureView &textureView)
+void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension type, wgpu::Extent3D size,
+                              bool mipmapping, wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
     // Compute the number of mip levels
     const uint32_t mipLevelCount = static_cast<uint32_t>(std::log2(std::max(size.width, size.height))) + 1;
@@ -191,8 +190,8 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
 //----------------------------------------------------------------------
 // Renderer Class implementation
 
-void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *environment, const Model &model, uint32_t width,
-                          uint32_t height, const std::function<void()> &callback)
+void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *environment, const Model &model,
+                          uint32_t width, uint32_t height, const std::function<void()> &callback)
 {
     m_window = window;
     m_camera = camera;
@@ -267,19 +266,24 @@ void Renderer::Render(const glm::mat4 &modelMatrix)
     wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
     wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderpass);
 
-    // Set bind groups
+    // Set global bind group
     pass.SetBindGroup(0, m_globalBindGroup);
-    pass.SetBindGroup(1, m_modelBindGroup);
 
     // Render the environment
     pass.SetPipeline(m_environmentPipeline);
     pass.Draw(6, 1, 0, 0);
 
-    // Render the model
+    // Set up model pipeline and buffers
     pass.SetPipeline(m_modelPipeline);
     pass.SetVertexBuffer(0, m_vertexBuffer);
     pass.SetIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint32);
-    pass.DrawIndexed(m_indexCount);
+
+    // Draw each sub mesh of the model
+    for (auto subMesh : m_subMeshes)
+    {
+        pass.SetBindGroup(1, m_materials[subMesh.m_materialIndex].m_bindGroup);
+        pass.DrawIndexed(subMesh.m_indexCount, 1u, subMesh.m_firstIndex);
+    }
 
     // End the pass
     pass.End();
@@ -310,26 +314,15 @@ void Renderer::UpdateModel(const Model &model)
     m_vertexBuffer = nullptr;
     m_indexBuffer = nullptr;
 
-    m_baseColorTexture = nullptr;
-    m_metallicRoughnessTexture = nullptr;
-    m_normalTexture = nullptr;
-    m_occlusionTexture = nullptr;
-    m_emissiveTexture = nullptr;
-    m_baseColorTextureView = nullptr;
-    m_metallicRoughnessTextureView = nullptr;
-    m_normalTextureView = nullptr;
-    m_occlusionTextureView = nullptr;
-    m_emissiveTextureView = nullptr;
     m_sampler = nullptr;
-    m_modelBindGroup = nullptr;
-    m_modelBindGroupLayout = nullptr;
     m_modelShaderModule = nullptr;
     m_modelPipeline = nullptr;
 
+    // Create new model resources
     CreateVertexBuffer(model);
     CreateIndexBuffer(model);
-    CreateModelTexturesAndSamplers(model);
-    CreateModelBindGroup();
+    CreateSubMeshes(model);
+    CreateMaterials(model);
     CreateModelRenderPipeline();
 }
 
@@ -349,6 +342,7 @@ void Renderer::UpdateEnvironment(const Environment &environment)
     m_environmentShaderModule = nullptr;
     m_environmentPipeline = nullptr;
 
+    // Create new environment resources
     CreateEnvironmentTexturesAndSamplers();
     CreateGlobalBindGroup();
     CreateEnvironmentRenderPipeline();
@@ -359,17 +353,13 @@ void Renderer::InitGraphics(const Model &model)
     ConfigureSurface();
     CreateDepthTexture();
 
-    CreateVertexBuffer(model);
-    CreateIndexBuffer(model);
+    CreateBindGroupLayouts();
+
     CreateUniformBuffers();
 
-    CreateEnvironmentTexturesAndSamplers();
-    CreateGlobalBindGroup();
-    CreateEnvironmentRenderPipeline();
+    UpdateEnvironment(*m_environment);
 
-    CreateModelTexturesAndSamplers(model);
-    CreateModelBindGroup();
-    CreateModelRenderPipeline();
+    UpdateModel(model);
 }
 
 void Renderer::ConfigureSurface()
@@ -393,157 +383,9 @@ void Renderer::CreateDepthTexture()
     m_depthTextureView = m_depthTexture.CreateView();
 }
 
-void Renderer::CreateVertexBuffer(const Model &model)
+void Renderer::CreateBindGroupLayouts()
 {
-    const std::vector<Model::Vertex> &vertexData = model.GetVertices();
-
-    wgpu::BufferDescriptor vertexBufferDesc{};
-    vertexBufferDesc.size = vertexData.size() * sizeof(Model::Vertex);
-    vertexBufferDesc.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
-    vertexBufferDesc.mappedAtCreation = true;
-
-    m_vertexBuffer = m_device.CreateBuffer(&vertexBufferDesc);
-    std::memcpy(m_vertexBuffer.GetMappedRange(), vertexData.data(), vertexData.size() * sizeof(Model::Vertex));
-    m_vertexBuffer.Unmap();
-}
-
-void Renderer::CreateIndexBuffer(const Model &model)
-{
-    const std::vector<uint32_t> &indexData = model.GetIndices();
-
-    wgpu::BufferDescriptor indexBufferDesc{};
-    indexBufferDesc.size = indexData.size() * sizeof(uint32_t);
-    indexBufferDesc.usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst;
-    indexBufferDesc.mappedAtCreation = true;
-
-    m_indexBuffer = m_device.CreateBuffer(&indexBufferDesc);
-    std::memcpy(m_indexBuffer.GetMappedRange(), indexData.data(), indexData.size() * sizeof(uint32_t));
-    m_indexBuffer.Unmap();
-
-    m_indexCount = static_cast<uint32_t>(indexData.size());
-}
-
-void Renderer::CreateUniformBuffers()
-{
-    wgpu::BufferDescriptor bufferDescriptor{};
-    bufferDescriptor.size = sizeof(GlobalUniforms);
-    bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
-
-    m_globalUniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
-
-    // Initialize Global Uniforms with default values
-    GlobalUniforms globalUniforms;
-    globalUniforms.viewMatrix = glm::mat4(1.0f);              // Initialize as identity
-    globalUniforms.projectionMatrix = glm::mat4(1.0f);        // Initialize as identity
-    globalUniforms.inverseViewMatrix = glm::mat4(1.0f);       // Initialize as identity
-    globalUniforms.inverseProjectionMatrix = glm::mat4(1.0f); // Initialize as identity
-    globalUniforms.cameraPosition = glm::vec3(0.0f, 0.0f, 0.0f);
-
-    m_device.GetQueue().WriteBuffer(m_globalUniformBuffer, 0, &globalUniforms, sizeof(GlobalUniforms));
-
-    // Create the model uniform buffer
-    bufferDescriptor.size = sizeof(ModelUniforms);
-    m_modelUniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
-
-    // Initialize Model Uniforms with default values
-    ModelUniforms modelUniforms;
-    modelUniforms.modelMatrix = glm::mat4(1.0f);  // Initialize as identity
-    modelUniforms.normalMatrix = glm::mat4(1.0f); // Initialize as identity
-
-    m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
-}
-
-void Renderer::CreateEnvironmentTexturesAndSamplers()
-{
-    MipmapGenerator mipmapGenerator(m_device);
-
-    // Create environment textures
-    CreateTextureCube(&m_environment->GetTexture(), m_device, mipmapGenerator, m_environmentTexture,
-                      m_environmentTextureView);
-
-    // Create IBL precomputed maps
-    CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube, {kIrradianceMapSize, kIrradianceMapSize, 6},
-                             true, m_iblIrradianceTexture, m_iblIrradianceTextureView);
-    CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube,
-                             {kPrecomputedSpecularMapSize, kPrecomputedSpecularMapSize, 6}, true,
-                             m_iblSpecularTexture, m_iblSpecularTextureView);
-    CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::e2D,
-                             {kBRDFIntegrationLUTMapSize, kBRDFIntegrationLUTMapSize, 1}, false, m_iblBrdfIntegrationLUT,
-                             m_iblBrdfIntegrationLUTView);
-
-    // Precompute maps
-    EnvironmentPreprocessor environmentPreprocessor(m_device);
-    environmentPreprocessor.GenerateMaps(m_environmentTexture, m_iblIrradianceTexture,
-                                         m_iblSpecularTexture, m_iblBrdfIntegrationLUT);
-    mipmapGenerator.GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, true);
-
-    // Create a sampler for the environment texture
-    wgpu::SamplerDescriptor samplerDescriptor{};
-    samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
-    samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
-    samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
-    samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-    m_environmentCubeSampler = m_device.CreateSampler(&samplerDescriptor);
-
-    // Create a sampler for the IBL BRDF LUT texture
-    samplerDescriptor.addressModeU = wgpu::AddressMode::ClampToEdge;
-    samplerDescriptor.addressModeV = wgpu::AddressMode::ClampToEdge;
-    samplerDescriptor.addressModeW = wgpu::AddressMode::ClampToEdge;
-    samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
-    m_iblBrdfIntegrationLUTSampler = m_device.CreateSampler(&samplerDescriptor);
-}
-
-void Renderer::CreateModelTexturesAndSamplers(const Model &model)
-{
-    // Check if the model has any textures
-    if (!model.GetMaterials().empty())
-    {
-        MipmapGenerator mipmapGenerator(m_device);
-
-        // Get the first Material from the Model for now. TODO: Support multiple materials
-        const Model::Material &material = model.GetMaterials().front();
-
-        // Base Color Texture
-        CreateTexture(model.GetTexture(material.m_baseColorTexture), m_device, mipmapGenerator, m_baseColorTexture,
-                      m_baseColorTextureView);
-
-        // Metallic-Roughness
-        CreateTexture(model.GetTexture(material.m_metallicRoughnessTexture), m_device, mipmapGenerator,
-                      m_metallicRoughnessTexture, m_metallicRoughnessTextureView);
-
-        // Normal Texture
-        CreateTexture(model.GetTexture(material.m_normalTexture), m_device, mipmapGenerator, m_normalTexture,
-                      m_normalTextureView);
-
-        // Occlusion Texture
-        CreateTexture(model.GetTexture(material.m_occlusionTexture), m_device, mipmapGenerator, m_occlusionTexture,
-                      m_occlusionTextureView);
-
-        // Emissive Texture
-        CreateTexture(model.GetTexture(material.m_emissiveTexture), m_device, mipmapGenerator, m_emissiveTexture,
-                      m_emissiveTextureView);
-
-        // Create a sampler for model textures
-        wgpu::SamplerDescriptor samplerDescriptor{};
-        samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
-        samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
-        samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
-        samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
-        samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
-        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-        m_sampler = m_device.CreateSampler(&samplerDescriptor);
-
-        std::cout << "Textures, texture views, and sampler created successfully." << std::endl;
-    }
-}
-
-void Renderer::CreateGlobalBindGroup()
-{
-    wgpu::BindGroupLayoutEntry layoutEntries[] = {
+    wgpu::BindGroupLayoutEntry globalLayoutEntries[] = {
         {
             .binding = 0,
             .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
@@ -597,58 +439,14 @@ void Renderer::CreateGlobalBindGroup()
         },
     };
 
-    wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
+    wgpu::BindGroupLayoutDescriptor globalBindGroupLayoutDescriptor{
         .entryCount = 7,
-        .entries = layoutEntries,
+        .entries = globalLayoutEntries,
     };
 
-    m_globalBindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+    m_globalBindGroupLayout = m_device.CreateBindGroupLayout(&globalBindGroupLayoutDescriptor);
 
-    wgpu::BindGroupEntry bindGroupEntries[] = {
-        {
-            .binding = 0,
-            .buffer = m_globalUniformBuffer,
-            .offset = 0,
-            .size = sizeof(GlobalUniforms),
-        },
-        {
-            .binding = 1,
-            .sampler = m_environmentCubeSampler,
-        },
-        {
-            .binding = 2,
-            .textureView = m_environmentTextureView,
-        },
-        {
-            .binding = 3,
-            .textureView = m_iblIrradianceTextureView,
-        },
-        {
-            .binding = 4,
-            .textureView = m_iblSpecularTextureView,
-        },
-        {
-            .binding = 5,
-            .textureView = m_iblBrdfIntegrationLUTView,
-        },
-        {
-            .binding = 6,
-            .sampler = m_iblBrdfIntegrationLUTSampler,
-        },
-    };
-
-    wgpu::BindGroupDescriptor bindGroupDescriptor{
-        .layout = m_globalBindGroupLayout,
-        .entryCount = 7,
-        .entries = bindGroupEntries,
-    };
-
-    m_globalBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
-}
-
-void Renderer::CreateModelBindGroup()
-{
-    wgpu::BindGroupLayoutEntry layoutEntries[7] = {
+    wgpu::BindGroupLayoutEntry modelLayoutEntries[7] = {
         {
             .binding = 0,
             .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
@@ -705,51 +503,261 @@ void Renderer::CreateModelBindGroup()
 
     };
 
-    wgpu::BindGroupLayoutDescriptor bindGroupLayoutDescriptor{
+    wgpu::BindGroupLayoutDescriptor modelBindGroupLayoutDescriptor{
         .entryCount = 7,
-        .entries = layoutEntries,
+        .entries = modelLayoutEntries,
     };
 
-    m_modelBindGroupLayout = m_device.CreateBindGroupLayout(&bindGroupLayoutDescriptor);
+    m_modelBindGroupLayout = m_device.CreateBindGroupLayout(&modelBindGroupLayoutDescriptor);
+}
 
-    wgpu::BindGroupEntry bindGroupEntries[7] = {{
-                                                    .binding = 0,
-                                                    .buffer = m_modelUniformBuffer,
-                                                    .offset = 0,
-                                                    .size = sizeof(ModelUniforms),
-                                                },
-                                                {
-                                                    .binding = 1,
-                                                    .sampler = m_sampler,
-                                                },
-                                                {
-                                                    .binding = 2,
-                                                    .textureView = m_baseColorTextureView,
-                                                },
-                                                {
-                                                    .binding = 3,
-                                                    .textureView = m_metallicRoughnessTextureView,
-                                                },
-                                                {
-                                                    .binding = 4,
-                                                    .textureView = m_normalTextureView,
-                                                },
-                                                {
-                                                    .binding = 5,
-                                                    .textureView = m_occlusionTextureView,
-                                                },
-                                                {
-                                                    .binding = 6,
-                                                    .textureView = m_emissiveTextureView,
-                                                }};
+void Renderer::CreateVertexBuffer(const Model &model)
+{
+    const std::vector<Model::Vertex> &vertexData = model.GetVertices();
+
+    wgpu::BufferDescriptor vertexBufferDesc{};
+    vertexBufferDesc.size = vertexData.size() * sizeof(Model::Vertex);
+    vertexBufferDesc.usage = wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+    vertexBufferDesc.mappedAtCreation = true;
+
+    m_vertexBuffer = m_device.CreateBuffer(&vertexBufferDesc);
+    std::memcpy(m_vertexBuffer.GetMappedRange(), vertexData.data(), vertexData.size() * sizeof(Model::Vertex));
+    m_vertexBuffer.Unmap();
+}
+
+void Renderer::CreateIndexBuffer(const Model &model)
+{
+    const std::vector<uint32_t> &indexData = model.GetIndices();
+
+    wgpu::BufferDescriptor indexBufferDesc{};
+    indexBufferDesc.size = indexData.size() * sizeof(uint32_t);
+    indexBufferDesc.usage = wgpu::BufferUsage::Index | wgpu::BufferUsage::CopyDst;
+    indexBufferDesc.mappedAtCreation = true;
+
+    m_indexBuffer = m_device.CreateBuffer(&indexBufferDesc);
+    std::memcpy(m_indexBuffer.GetMappedRange(), indexData.data(), indexData.size() * sizeof(uint32_t));
+    m_indexBuffer.Unmap();
+}
+
+void Renderer::CreateUniformBuffers()
+{
+    wgpu::BufferDescriptor bufferDescriptor{};
+    bufferDescriptor.size = sizeof(GlobalUniforms);
+    bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+
+    m_globalUniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
+
+    // Initialize Global Uniforms with default values
+    GlobalUniforms globalUniforms;
+    globalUniforms.viewMatrix = glm::mat4(1.0f);              // Initialize as identity
+    globalUniforms.projectionMatrix = glm::mat4(1.0f);        // Initialize as identity
+    globalUniforms.inverseViewMatrix = glm::mat4(1.0f);       // Initialize as identity
+    globalUniforms.inverseProjectionMatrix = glm::mat4(1.0f); // Initialize as identity
+    globalUniforms.cameraPosition = glm::vec3(0.0f, 0.0f, 0.0f);
+
+    m_device.GetQueue().WriteBuffer(m_globalUniformBuffer, 0, &globalUniforms, sizeof(GlobalUniforms));
+
+    // Create the model uniform buffer
+    bufferDescriptor.size = sizeof(ModelUniforms);
+    m_modelUniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
+
+    // Initialize Model Uniforms with default values
+    ModelUniforms modelUniforms;
+    modelUniforms.modelMatrix = glm::mat4(1.0f);  // Initialize as identity
+    modelUniforms.normalMatrix = glm::mat4(1.0f); // Initialize as identity
+
+    m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
+}
+
+void Renderer::CreateEnvironmentTexturesAndSamplers()
+{
+    MipmapGenerator mipmapGenerator(m_device);
+
+    // Create environment textures
+    CreateTextureCube(&m_environment->GetTexture(), m_device, mipmapGenerator, m_environmentTexture,
+                      m_environmentTextureView);
+
+    // Create IBL precomputed maps
+    CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube, {kIrradianceMapSize, kIrradianceMapSize, 6},
+                             true, m_iblIrradianceTexture, m_iblIrradianceTextureView);
+    CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube,
+                             {kPrecomputedSpecularMapSize, kPrecomputedSpecularMapSize, 6}, true, m_iblSpecularTexture,
+                             m_iblSpecularTextureView);
+    CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::e2D,
+                             {kBRDFIntegrationLUTMapSize, kBRDFIntegrationLUTMapSize, 1}, false,
+                             m_iblBrdfIntegrationLUT, m_iblBrdfIntegrationLUTView);
+
+    // Precompute maps
+    EnvironmentPreprocessor environmentPreprocessor(m_device);
+    environmentPreprocessor.GenerateMaps(m_environmentTexture, m_iblIrradianceTexture, m_iblSpecularTexture,
+                                         m_iblBrdfIntegrationLUT);
+    mipmapGenerator.GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, true);
+
+    // Create a sampler for the environment texture
+    wgpu::SamplerDescriptor samplerDescriptor{};
+    samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
+    samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
+    samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
+    samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+    samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+    m_environmentCubeSampler = m_device.CreateSampler(&samplerDescriptor);
+
+    // Create a sampler for the IBL BRDF LUT texture
+    samplerDescriptor.addressModeU = wgpu::AddressMode::ClampToEdge;
+    samplerDescriptor.addressModeV = wgpu::AddressMode::ClampToEdge;
+    samplerDescriptor.addressModeW = wgpu::AddressMode::ClampToEdge;
+    samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+    samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
+    m_iblBrdfIntegrationLUTSampler = m_device.CreateSampler(&samplerDescriptor);
+}
+
+void Renderer::CreateSubMeshes(const Model &model)
+{
+    m_subMeshes.clear();
+    m_subMeshes.reserve(model.GetSubMeshes().size());
+
+    for (auto srcSubMesh : model.GetSubMeshes())
+    {
+        SubMesh dstSubMesh = {.m_firstIndex = srcSubMesh.m_firstIndex,
+                              .m_indexCount = srcSubMesh.m_indexCount,
+                              .m_materialIndex = srcSubMesh.m_materialIndex};
+        m_subMeshes.push_back(dstSubMesh);
+    }
+}
+
+void Renderer::CreateMaterials(const Model &model)
+{
+    m_materials.clear();
+
+    // Check if the model has any textures
+    if (!model.GetMaterials().empty())
+    {
+        // Create a sampler for model textures
+        wgpu::SamplerDescriptor samplerDescriptor{};
+        samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
+        samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
+        samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
+        samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+        m_sampler = m_device.CreateSampler(&samplerDescriptor);
+
+        MipmapGenerator mipmapGenerator(m_device);
+
+        m_materials.resize(model.GetMaterials().size());
+
+        for (size_t i = 0; i < model.GetMaterials().size(); ++i)
+        {
+            const Model::Material &srcMat = model.GetMaterials()[i];
+            Material &dstMat = m_materials[i];
+
+            // Base Color Texture
+            CreateTexture(model.GetTexture(srcMat.m_baseColorTexture), m_device, mipmapGenerator,
+                          dstMat.m_baseColorTexture, dstMat.m_baseColorTextureView);
+
+            // Metallic-Roughness
+            CreateTexture(model.GetTexture(srcMat.m_metallicRoughnessTexture), m_device, mipmapGenerator,
+                          dstMat.m_metallicRoughnessTexture, dstMat.m_metallicRoughnessTextureView);
+
+            // Normal Texture
+            CreateTexture(model.GetTexture(srcMat.m_normalTexture), m_device, mipmapGenerator, dstMat.m_normalTexture,
+                          dstMat.m_normalTextureView);
+
+            // Occlusion Texture
+            CreateTexture(model.GetTexture(srcMat.m_occlusionTexture), m_device, mipmapGenerator,
+                          dstMat.m_occlusionTexture, dstMat.m_occlusionTextureView);
+
+            // Emissive Texture
+            CreateTexture(model.GetTexture(srcMat.m_emissiveTexture), m_device, mipmapGenerator,
+                          dstMat.m_emissiveTexture, dstMat.m_emissiveTextureView);
+
+            // Create bind group
+            wgpu::BindGroupEntry bindGroupEntries[7] = {{
+                                                            .binding = 0,
+                                                            .buffer = m_modelUniformBuffer,
+                                                            .offset = 0,
+                                                            .size = sizeof(ModelUniforms),
+                                                        },
+                                                        {
+                                                            .binding = 1,
+                                                            .sampler = m_sampler,
+                                                        },
+                                                        {
+                                                            .binding = 2,
+                                                            .textureView = dstMat.m_baseColorTextureView,
+                                                        },
+                                                        {
+                                                            .binding = 3,
+                                                            .textureView = dstMat.m_metallicRoughnessTextureView,
+                                                        },
+                                                        {
+                                                            .binding = 4,
+                                                            .textureView = dstMat.m_normalTextureView,
+                                                        },
+                                                        {
+                                                            .binding = 5,
+                                                            .textureView = dstMat.m_occlusionTextureView,
+                                                        },
+                                                        {
+                                                            .binding = 6,
+                                                            .textureView = dstMat.m_emissiveTextureView,
+                                                        }};
+
+            wgpu::BindGroupDescriptor bindGroupDescriptor{
+                .layout = m_modelBindGroupLayout,
+                .entryCount = 7,
+                .entries = bindGroupEntries,
+            };
+
+            dstMat.m_bindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
+        }
+    }
+}
+
+void Renderer::CreateGlobalBindGroup()
+{
+    wgpu::BindGroupEntry bindGroupEntries[] = {
+        {
+            .binding = 0,
+            .buffer = m_globalUniformBuffer,
+            .offset = 0,
+            .size = sizeof(GlobalUniforms),
+        },
+        {
+            .binding = 1,
+            .sampler = m_environmentCubeSampler,
+        },
+        {
+            .binding = 2,
+            .textureView = m_environmentTextureView,
+        },
+        {
+            .binding = 3,
+            .textureView = m_iblIrradianceTextureView,
+        },
+        {
+            .binding = 4,
+            .textureView = m_iblSpecularTextureView,
+        },
+        {
+            .binding = 5,
+            .textureView = m_iblBrdfIntegrationLUTView,
+        },
+        {
+            .binding = 6,
+            .sampler = m_iblBrdfIntegrationLUTSampler,
+        },
+    };
 
     wgpu::BindGroupDescriptor bindGroupDescriptor{
-        .layout = m_modelBindGroupLayout,
+        .layout = m_globalBindGroupLayout,
         .entryCount = 7,
         .entries = bindGroupEntries,
     };
 
-    m_modelBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
+    m_globalBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
 void Renderer::CreateModelRenderPipeline()
@@ -809,7 +817,7 @@ void Renderer::CreateModelRenderPipeline()
                                               .depthStencil = &depthStencilState,
                                               .fragment = &fragmentState};
 
-    m_modelPipeline = m_device.CreateRenderPipeline(&descriptor);                                                
+    m_modelPipeline = m_device.CreateRenderPipeline(&descriptor);
 }
 
 void Renderer::CreateEnvironmentRenderPipeline()

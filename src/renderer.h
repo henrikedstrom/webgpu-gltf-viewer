@@ -43,13 +43,14 @@ class Renderer
     void InitGraphics(const Model &model);
     void ConfigureSurface();
     void CreateDepthTexture();
+    void CreateBindGroupLayouts();
     void CreateVertexBuffer(const Model &model);
     void CreateIndexBuffer(const Model &model);
     void CreateUniformBuffers();
     void CreateEnvironmentTexturesAndSamplers();
-    void CreateModelTexturesAndSamplers(const Model &model);
+    void CreateSubMeshes(const Model &model);
+    void CreateMaterials(const Model &model);
     void CreateGlobalBindGroup();
-    void CreateModelBindGroup();
     void CreateEnvironmentRenderPipeline();
     void CreateModelRenderPipeline();
     void UpdateUniforms(const glm::mat4 &modelMatrix) const;
@@ -72,6 +73,27 @@ class Renderer
     {
         alignas(16) glm::mat4 modelMatrix;
         alignas(16) glm::mat4 normalMatrix;
+    };
+
+    struct Material {
+      wgpu::Texture m_baseColorTexture;
+      wgpu::TextureView m_baseColorTextureView;
+      wgpu::Texture m_metallicRoughnessTexture;
+      wgpu::TextureView m_metallicRoughnessTextureView;
+      wgpu::Texture m_normalTexture;
+      wgpu::TextureView m_normalTextureView;
+      wgpu::Texture m_occlusionTexture;
+      wgpu::TextureView m_occlusionTextureView;
+      wgpu::Texture m_emissiveTexture;
+      wgpu::TextureView m_emissiveTextureView;
+      wgpu::TextureView m_textureView;
+      wgpu::BindGroup m_bindGroup;
+    };
+
+    struct SubMesh {
+      uint32_t m_firstIndex = 0; // First index in the index buffer
+      uint32_t m_indexCount = 0; // Number of indices in the submesh
+      int m_materialIndex = -1;  // Material index for the submesh
     };
 
     // Private member variables
@@ -112,23 +134,12 @@ class Renderer
     // Model related data. TODO: Move to separate class
     wgpu::ShaderModule m_modelShaderModule;
     wgpu::BindGroupLayout m_modelBindGroupLayout;
-    wgpu::BindGroup m_modelBindGroup;
     wgpu::RenderPipeline m_modelPipeline;
     wgpu::Buffer m_vertexBuffer;
     wgpu::Buffer m_indexBuffer;
-    uint32_t m_indexCount = 0;
     wgpu::Buffer m_modelUniformBuffer;
     wgpu::Sampler m_sampler;
 
-    wgpu::Texture m_baseColorTexture;
-    wgpu::TextureView m_baseColorTextureView;
-    wgpu::Texture m_metallicRoughnessTexture;
-    wgpu::TextureView m_metallicRoughnessTextureView;
-    wgpu::Texture m_normalTexture;
-    wgpu::TextureView m_normalTextureView;
-    wgpu::Texture m_occlusionTexture;
-    wgpu::TextureView m_occlusionTextureView;
-    wgpu::Texture m_emissiveTexture;
-    wgpu::TextureView m_emissiveTextureView;
-    wgpu::TextureView m_textureView;
+    std::vector<SubMesh> m_subMeshes;
+    std::vector<Material> m_materials;
 };

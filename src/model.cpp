@@ -27,13 +27,19 @@ namespace
 constexpr float PI = 3.14159265358979323846f;
 
 void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::vector<Model::Vertex> &vertices,
-                 std::vector<uint32_t> &indices, const glm::mat4 &transform)
+                 std::vector<uint32_t> &indices, std::vector<Model::SubMesh> &subMeshes, const glm::mat4 &transform)
 {
     glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(transform)));
     glm::mat3 tangentMatrix = glm::mat3(transform);
 
     for (const auto &primitive : mesh.primitives)
     {
+        Model::SubMesh subMesh;
+        subMesh.m_firstIndex = static_cast<uint32_t>(indices.size());
+        subMesh.m_materialIndex = primitive.material;
+
+        uint32_t vertexOffset = static_cast<uint32_t>(vertices.size());
+
         // Access vertex positions
         const auto &positionAccessor = model.accessors[primitive.attributes.find("POSITION")->second];
         const auto &positionBufferView = model.bufferViews[positionAccessor.bufferView];
@@ -175,25 +181,33 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             const auto &indexBuffer = model.buffers[indexBufferView.buffer];
             const void *indexData = indexBuffer.data.data() + indexBufferView.byteOffset + indexAccessor.byteOffset;
 
+            subMesh.m_indexCount = indexAccessor.count;
+
             if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
             {
                 const uint16_t *data = reinterpret_cast<const uint16_t *>(indexData);
                 for (size_t i = 0; i < indexAccessor.count; ++i)
                 {
-                    indices.push_back(static_cast<uint32_t>(data[i]));
+                    indices.push_back(vertexOffset + static_cast<uint32_t>(data[i]));
                 }
             }
             else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT)
             {
                 const uint32_t *data = reinterpret_cast<const uint32_t *>(indexData);
-                indices.insert(indices.end(), data, data + indexAccessor.count);
+                for (size_t i = 0; i < indexAccessor.count; ++i)
+                {
+                    indices.push_back(vertexOffset + data[i]);
+                }
             }
         }
+
+        subMeshes.push_back(subMesh);
     }
 }
 
 void ProcessNode(const tinygltf::Model &model, int nodeIndex, const glm::mat4 &parentTransform,
-                 std::vector<Model::Vertex> &vertices, std::vector<uint32_t> &indices)
+                 std::vector<Model::Vertex> &vertices, std::vector<uint32_t> &indices,
+                 std::vector<Model::SubMesh> &subMeshes)
 {
     const tinygltf::Node &node = model.nodes[nodeIndex];
 
@@ -231,13 +245,13 @@ void ProcessNode(const tinygltf::Model &model, int nodeIndex, const glm::mat4 &p
     if (node.mesh >= 0)
     {
         const tinygltf::Mesh &mesh = model.meshes[node.mesh];
-        ProcessMesh(model, mesh, vertices, indices, globalTransform);
+        ProcessMesh(model, mesh, vertices, indices, subMeshes, globalTransform);
     }
 
     // Recursively process children nodes
     for (int childIndex : node.children)
     {
-        ProcessNode(model, childIndex, globalTransform, vertices, indices);
+        ProcessNode(model, childIndex, globalTransform, vertices, indices, subMeshes);
     }
 }
 
@@ -315,7 +329,8 @@ void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std
 }
 
 void ProcessModel(const tinygltf::Model &model, std::vector<Model::Vertex> &vertices, std::vector<uint32_t> &indices,
-                  std::vector<Model::Material> &materials, std::vector<Model::Texture> &textures)
+                  std::vector<Model::Material> &materials, std::vector<Model::Texture> &textures,
+                  std::vector<Model::SubMesh> &subMeshes)
 {
     if (model.scenes.size() > 0)
     {
@@ -323,7 +338,7 @@ void ProcessModel(const tinygltf::Model &model, std::vector<Model::Vertex> &vert
 
         for (int nodeIndex : scene.nodes)
         {
-            ProcessNode(model, nodeIndex, glm::mat4(1.0f), vertices, indices);
+            ProcessNode(model, nodeIndex, glm::mat4(1.0f), vertices, indices, subMeshes);
         }
     }
 
@@ -376,7 +391,7 @@ void Model::Load(const std::string &filename, const uint8_t *data, uint32_t size
     if (result)
     {
         ClearData();
-        ProcessModel(model, m_vertices, m_indices, m_materials, m_textures);
+        ProcessModel(model, m_vertices, m_indices, m_materials, m_textures, m_subMeshes);
         RecomputeBounds();
     }
     else
@@ -439,22 +454,28 @@ const Model::Texture *Model::GetTexture(int index) const noexcept
     return nullptr;
 }
 
+const std::vector<Model::SubMesh> &Model::GetSubMeshes() const noexcept
+{
+    return m_subMeshes;
+}
+
 void Model::ClearData()
 {
     m_transform = glm::mat4(1.0f);
     m_rotationAngle = 0.0f;
     m_minBounds = glm::vec3(std::numeric_limits<float>::max());
-    m_maxBounds = glm::vec3(std::numeric_limits<float>::min());
+    m_maxBounds = glm::vec3(std::numeric_limits<float>::lowest());
     m_vertices.clear();
     m_indices.clear();
     m_materials.clear();
     m_textures.clear();
+    m_subMeshes.clear();
 }
 
 void Model::RecomputeBounds()
 {
     m_minBounds = glm::vec3(std::numeric_limits<float>::max());
-    m_maxBounds = glm::vec3(std::numeric_limits<float>::min());
+    m_maxBounds = glm::vec3(std::numeric_limits<float>::lowest());
 
     // Calculate the bounding box of the model
     for (const auto &vertex : m_vertices)
