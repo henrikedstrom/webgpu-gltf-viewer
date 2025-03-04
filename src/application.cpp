@@ -206,10 +206,10 @@ void Application::Run()
     });
 #endif
 
+    // Load the default environment and model
     m_environment.Load("./assets/environments/helipad.hdr");
+    m_model.Load("./assets/models/DamagedHelmet.glb");
 
-    m_model.Load("./assets/models/DamagedHelmet/DamagedHelmet.gltf");
-    // m_model.Load("./assets/models/SciFiHelmet/SciFiHelmet.gltf");
     RepositionCamera(m_camera, m_model);
 
     m_renderer.Initialize(m_window, &m_camera, &m_environment, m_model, m_width, m_height, [this]() { MainLoop(); });
