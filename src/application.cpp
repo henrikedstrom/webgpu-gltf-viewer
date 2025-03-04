@@ -146,17 +146,7 @@ void RepositionCamera(Camera &camera, const Model &model)
     glm::vec3 minBounds, maxBounds;
     model.GetBounds(minBounds, maxBounds);
 
-    glm::vec3 center = (minBounds + maxBounds) * 0.5f;
-    float radius = glm::length(maxBounds - minBounds) * 0.5f;
-    float distance = radius / sin(glm::radians(camera.GetFOV() * 0.5f));
-
-    // Calculate the camera position
-    glm::vec3 position = center + glm::vec3(0.0f, 0.0f, distance);
-
-    // Update the camera
-    camera.SetPosition(position);
-    camera.SetTarget(center);
-    camera.SetNearFarPlanes(radius * 0.01f, distance + radius * 100.0f);
+    camera.ResetToModel(minBounds, maxBounds);
 }
 
 } // namespace

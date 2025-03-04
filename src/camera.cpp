@@ -10,10 +10,11 @@
 namespace
 {
 constexpr float kTumbleSpeed = 0.004f;
-constexpr float kTiltClamp = 0.98f; // Restricts the forward vector's vertical component to avoid gimbal lock.
 constexpr float kPanSpeed = 0.01f;
 constexpr float kZoomSpeed = 0.01f;
-constexpr float kDefaultFOV = 45.0f;
+constexpr float kNearClipFactor = 0.01f;
+constexpr float kFarClipFactor = 100.0f;
+constexpr float kTiltClamp = 0.98f; // Restricts the forward vector's vertical component to avoid gimbal lock.
 } // namespace
 
 //----------------------------------------------------------------------
@@ -77,7 +78,7 @@ void Camera::Tumble(int dx, int dy)
 
 void Camera::Zoom(int dx, int dy)
 {
-    const float delta = (-dx + dy) * kZoomSpeed;
+    const float delta = (-dx + dy) * m_zoomFactor;
 
     // Move the camera along the forward vector
     m_position += m_forward * delta;
@@ -85,30 +86,33 @@ void Camera::Zoom(int dx, int dy)
 
 void Camera::Pan(int dx, int dy)
 {
-    const float delta_x = -dx * kPanSpeed;
-    const float delta_y = dy * kPanSpeed;
+    const float delta_x = -dx * m_panFactor;
+    const float delta_y = dy * m_panFactor;
 
     // Move the camera along the right and up vectors
     m_position += m_up * delta_y + m_right * delta_x;
     m_target += m_up * delta_y + m_right * delta_x;
 }
 
-void Camera::SetPosition(const glm::vec3 &position)
+void Camera::ResetToModel(const glm::vec3 &minBounds, const glm::vec3 &maxBounds)
 {
+    glm::vec3 center = (minBounds + maxBounds) * 0.5f;
+    float radius = glm::length(maxBounds - minBounds) * 0.5f;
+    float distance = radius / sin(glm::radians(GetFOV() * 0.5f));
+
+    // Calculate the camera position
+    glm::vec3 position = center + glm::vec3(0.0f, 0.0f, distance);
+
+    // Update the camera properties
     m_position = position;
-    UpdateCameraVectors();
-}
+    m_target = center;
+    m_near = radius * kNearClipFactor;
+    m_far = distance + radius * kFarClipFactor;
+    m_panFactor = radius * kPanSpeed;
+    m_zoomFactor = radius * kZoomSpeed;
 
-void Camera::SetTarget(const glm::vec3 &target)
-{
-    m_target = target;
+    // Recalculate the camera's basis vectors
     UpdateCameraVectors();
-}
-
-void Camera::SetNearFarPlanes(float near, float far)
-{
-    m_near = near;
-    m_far = far;
 }
 
 void Camera::ResizeViewport(int width, int height)

@@ -7,6 +7,9 @@
 class Camera
 {
   public:
+    // Constants
+    static constexpr float kDefaultFOV{45.0f}; // Default field of view
+
     // Constructors
     Camera() = default;
     Camera(int width, int height) : m_width(width), m_height(height)
@@ -23,9 +26,7 @@ class Camera
     void Tumble(int dx, int dy);
     void Zoom(int dx, int dy);
     void Pan(int dx, int dy);
-    void SetPosition(const glm::vec3 &position);
-    void SetTarget(const glm::vec3 &target);
-    void SetNearFarPlanes(float near, float far);
+    void ResetToModel(const glm::vec3 &minBounds, const glm::vec3 &maxBounds);
     void ResizeViewport(int width, int height);
 
     // Accessors
@@ -45,6 +46,10 @@ class Camera
     // Clipping planes
     float m_near{0.1f};  // Near clipping plane
     float m_far{100.0f}; // Far clipping plane
+
+    // Camera controls
+    float m_panFactor{1.0f};
+    float m_zoomFactor{1.0f};
 
     // Camera properties
     glm::vec3 m_position{0.0f, 0.0f, 5.0f}; // Default camera position
