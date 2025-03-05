@@ -441,6 +441,11 @@ void Model::Update(float deltaTime, bool animate)
     m_transform = glm::rotate(glm::mat4(1.0f), -m_rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
 }
 
+void Model::ResetOrientation() noexcept
+{
+    m_rotationAngle = 0.0f;
+}
+
 const glm::mat4 &Model::GetTransform() const noexcept
 {
     return m_transform;

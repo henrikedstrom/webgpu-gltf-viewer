@@ -136,7 +136,7 @@ void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
 
         if (keyPressed)
         {
-            Application::GetInstance()->OnKeyPressed(key);
+            Application::GetInstance()->OnKeyPressed(key, mods);
         }
     }
 }
@@ -239,11 +239,20 @@ void Application::ProcessFrame()
     m_renderer.Render(m_model.GetTransform());
 }
 
-void Application::OnKeyPressed(int key)
+void Application::OnKeyPressed(int key, int mods)
 {
     if (key == GLFW_KEY_A)
     {
-        m_animateModel = !m_animateModel;
+        // Shift-A resets the model orientation
+        if (mods & GLFW_MOD_SHIFT)
+        {
+            m_model.ResetOrientation();
+        }
+        else
+        {
+            // 'a' toggles model animation
+            m_animateModel = !m_animateModel;
+        }
     }
     else if (key == GLFW_KEY_ESCAPE)
     {

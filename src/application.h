@@ -33,7 +33,7 @@ class Application
 
     // Public Interface
     void Run();
-    void OnKeyPressed(int key);
+    void OnKeyPressed(int key, int mods);
     void OnResize(int width, int height);
     void OnFileDropped(const std::string &filename, uint8_t *data = 0, int length = 0);
 

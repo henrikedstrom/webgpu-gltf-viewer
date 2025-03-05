@@ -26,7 +26,7 @@ class Model
     struct Material
     {
         glm::vec4 m_baseColorFactor = glm::vec4(1.0f); // Base color factor
-        glm::vec4 m_emissiveFactor = glm::vec4(0.0f);  // Emissive color factor
+        glm::vec3 m_emissiveFactor = glm::vec3(0.0f);  // Emissive color factor
         float m_metallicFactor = 1.0f;                 // Metallic factor
         float m_roughnessFactor = 1.0f;                // Roughness factor
         int m_baseColorTexture = -1;                   // Index of base color texture
@@ -63,6 +63,7 @@ class Model
     // Public Interface
     void Load(const std::string &filename, const uint8_t *data = 0, uint32_t size = 0);
     void Update(float deltaTime, bool animate);
+    void ResetOrientation() noexcept;
 
     // Accessors
     const glm::mat4 &GetTransform() const noexcept;
