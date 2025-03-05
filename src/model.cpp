@@ -34,6 +34,12 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
 
     for (const auto &primitive : mesh.primitives)
     {
+        if (primitive.material < 0)
+        {
+            // TODO: Handle this in another way? Assign 'default' material?
+            continue;
+        }
+
         Model::SubMesh subMesh;
         subMesh.m_firstIndex = static_cast<uint32_t>(indices.size());
         subMesh.m_materialIndex = primitive.material;
@@ -280,7 +286,7 @@ void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Mate
 {
     Model::Material mat;
     mat.m_baseColorFactor = glm::make_vec4(material.pbrMetallicRoughness.baseColorFactor.data());
-    mat.m_emissiveFactor = glm::make_vec4(material.emissiveFactor.data());
+    mat.m_emissiveFactor = glm::make_vec3(material.emissiveFactor.data());
     mat.m_metallicFactor = static_cast<float>(material.pbrMetallicRoughness.metallicFactor);
     mat.m_roughnessFactor = static_cast<float>(material.pbrMetallicRoughness.roughnessFactor);
 
@@ -297,7 +303,7 @@ void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Mate
     std::cout << "  Base Color Factor: " << mat.m_baseColorFactor.r << ", " << mat.m_baseColorFactor.g << ", "
               << mat.m_baseColorFactor.b << ", " << mat.m_baseColorFactor.a << std::endl;
     std::cout << "  Emissive Factor: " << mat.m_emissiveFactor.r << ", " << mat.m_emissiveFactor.g << ", "
-              << mat.m_emissiveFactor.b << ", " << mat.m_emissiveFactor.a << std::endl;
+              << mat.m_emissiveFactor.b << std::endl;
     std::cout << "  Metallic Factor: " << mat.m_metallicFactor << std::endl;
     std::cout << "  Roughness Factor: " << mat.m_roughnessFactor << std::endl;
     std::cout << "  Base Color Texture: " << mat.m_baseColorTexture << std::endl;
