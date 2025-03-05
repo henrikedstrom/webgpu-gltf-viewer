@@ -183,7 +183,15 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
 
             subMesh.m_indexCount = indexAccessor.count;
 
-            if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
+            if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE)
+            {
+                const uint8_t *data = reinterpret_cast<const uint8_t *>(indexData);
+                for (size_t i = 0; i < indexAccessor.count; ++i)
+                {
+                    indices.push_back(vertexOffset + data[i]);
+                }
+            }
+            else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
             {
                 const uint16_t *data = reinterpret_cast<const uint16_t *>(indexData);
                 for (size_t i = 0; i < indexAccessor.count; ++i)
@@ -198,6 +206,19 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
                 {
                     indices.push_back(vertexOffset + data[i]);
                 }
+            }
+            else
+            {
+                assert(false && "Invalid index accessor component type");
+            }
+        }
+        else
+        {
+            // Non-indexed mesh: generate sequential indices
+            subMesh.m_indexCount = static_cast<uint32_t>(positionAccessor.count);
+            for (uint32_t i = 0; i < positionAccessor.count; ++i)
+            {
+                indices.push_back(vertexOffset + i);
             }
         }
 
