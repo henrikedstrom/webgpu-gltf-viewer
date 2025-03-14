@@ -23,12 +23,24 @@ class Model
         glm::vec4 m_color;     // COLOR_0 (vec4)
     };
 
+    enum class AlphaMode
+    {
+        Opaque,
+        Mask,
+        Blend
+    };
+
     struct Material
     {
         glm::vec4 m_baseColorFactor = glm::vec4(1.0f); // Base color factor
         glm::vec3 m_emissiveFactor = glm::vec3(0.0f);  // Emissive color factor
         float m_metallicFactor = 1.0f;                 // Metallic factor
         float m_roughnessFactor = 1.0f;                // Roughness factor
+        float m_normalScale = 1.0f;                    // Normal scale
+        float m_occlusionStrength = 1.0f;              // Occlusion strength
+        AlphaMode m_alphaMode = AlphaMode::Opaque;     // Alpha rendering mode
+        float m_alphaCutoff = 0.5f;                    // Alpha cutoff value
+        bool m_doubleSided = false;                    // Double-sided rendering
         int m_baseColorTexture = -1;                   // Index of base color texture
         int m_metallicRoughnessTexture = -1;           // Index of metallic-roughness texture
         int m_normalTexture = -1;                      // Index of normal texture

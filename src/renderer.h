@@ -75,7 +75,19 @@ class Renderer
         alignas(16) glm::mat4 normalMatrix;
     };
 
+    struct MaterialUniforms
+    {
+        alignas(16) glm::vec4 baseColorFactor;
+        alignas(16) glm::vec3 emissiveFactor;
+        alignas(4) float metallicFactor;
+        alignas(4) float roughnessFactor;
+        alignas(4) float normalScale;
+        alignas(4) float occlusionStrength;
+    };
+
     struct Material {
+      MaterialUniforms m_uniforms;
+      wgpu::Buffer m_uniformBuffer;
       wgpu::Texture m_baseColorTexture;
       wgpu::TextureView m_baseColorTextureView;
       wgpu::Texture m_metallicRoughnessTexture;

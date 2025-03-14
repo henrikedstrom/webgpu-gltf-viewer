@@ -15,6 +15,7 @@
 #include <tiny_gltf.h>
 
 // Project Headers
+#include "mesh_utils.h"
 #include "model.h"
 
 //----------------------------------------------------------------------
@@ -52,10 +53,12 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         const auto &positionBuffer = model.buffers[positionBufferView.buffer];
         const float *positionData = reinterpret_cast<const float *>(
             positionBuffer.data.data() + positionBufferView.byteOffset + positionAccessor.byteOffset);
+        const size_t positionStride = positionAccessor.ByteStride(positionBufferView) / sizeof(float);
 
         // Optional: Access vertex normals
         const auto normalIter = primitive.attributes.find("NORMAL");
         const float *normalData = nullptr;
+        size_t normalStride = 0;
         if (normalIter != primitive.attributes.end())
         {
             const auto &normalAccessor = model.accessors[normalIter->second];
@@ -63,11 +66,13 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             const auto &normalBuffer = model.buffers[normalBufferView.buffer];
             normalData = reinterpret_cast<const float *>(normalBuffer.data.data() + normalBufferView.byteOffset +
                                                          normalAccessor.byteOffset);
+            normalStride = normalAccessor.ByteStride(normalBufferView) / sizeof(float);
         }
 
         // Optional: Access tangents
         const auto tangentIter = primitive.attributes.find("TANGENT");
         const float *tangentData = nullptr;
+        size_t tangentStride = 0;
         if (tangentIter != primitive.attributes.end())
         {
             const auto &tangentAccessor = model.accessors[tangentIter->second];
@@ -75,11 +80,13 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             const auto &tangentBuffer = model.buffers[tangentBufferView.buffer];
             tangentData = reinterpret_cast<const float *>(tangentBuffer.data.data() + tangentBufferView.byteOffset +
                                                           tangentAccessor.byteOffset);
+            tangentStride = tangentAccessor.ByteStride(tangentBufferView) / sizeof(float);
         }
 
         // Optional: Access texture coordinates
         const auto texCoord0Iter = primitive.attributes.find("TEXCOORD_0");
         const float *texCoord0Data = nullptr;
+        size_t texCoord0Stride = 0;
         if (texCoord0Iter != primitive.attributes.end())
         {
             const auto &texCoordAccessor = model.accessors[texCoord0Iter->second];
@@ -87,10 +94,12 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             const auto &texCoordBuffer = model.buffers[texCoordBufferView.buffer];
             texCoord0Data = reinterpret_cast<const float *>(texCoordBuffer.data.data() + texCoordBufferView.byteOffset +
                                                             texCoordAccessor.byteOffset);
+            texCoord0Stride = texCoordAccessor.ByteStride(texCoordBufferView) / sizeof(float);
         }
 
         const auto texCoord1Iter = primitive.attributes.find("TEXCOORD_1");
         const float *texCoord1Data = nullptr;
+        size_t texCoord1Stride = 0;
         if (texCoord1Iter != primitive.attributes.end())
         {
             const auto &texCoordAccessor = model.accessors[texCoord1Iter->second];
@@ -98,11 +107,13 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             const auto &texCoordBuffer = model.buffers[texCoordBufferView.buffer];
             texCoord1Data = reinterpret_cast<const float *>(texCoordBuffer.data.data() + texCoordBufferView.byteOffset +
                                                             texCoordAccessor.byteOffset);
+            texCoord1Stride = texCoordAccessor.ByteStride(texCoordBufferView) / sizeof(float);
         }
 
         // Optional: Access vertex colors
         const auto colorIter = primitive.attributes.find("COLOR_0");
         const float *colorData = nullptr;
+        size_t colorStride = 0;
         if (colorIter != primitive.attributes.end())
         {
             const auto &colorAccessor = model.accessors[colorIter->second];
@@ -110,6 +121,7 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             const auto &colorBuffer = model.buffers[colorBufferView.buffer];
             colorData = reinterpret_cast<const float *>(colorBuffer.data.data() + colorBufferView.byteOffset +
                                                         colorAccessor.byteOffset);
+            colorStride = colorAccessor.ByteStride(colorBufferView) / sizeof(float);
         }
 
         // Copy vertex data into Vertex struct
@@ -118,14 +130,16 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             Model::Vertex vertex;
 
             // Position
-            glm::vec4 pos = glm::vec4(positionData[i * 3 + 0], positionData[i * 3 + 1], positionData[i * 3 + 2], 1.0f);
+            glm::vec4 pos = glm::vec4(positionData[i * positionStride + 0], positionData[i * positionStride + 1],
+                                      positionData[i * positionStride + 2], 1.0f);
             vertex.m_position = glm::vec3(transform * pos);
 
             // Normal (default to 0, 0, 1 if not provided)
             if (normalData)
             {
-                vertex.m_normal = glm::normalize(
-                    normalMatrix * glm::vec3(normalData[i * 3 + 0], normalData[i * 3 + 1], normalData[i * 3 + 2]));
+                vertex.m_normal = glm::normalize(normalMatrix * glm::vec3(normalData[i * normalStride + 0],
+                                                                          normalData[i * normalStride + 1],
+                                                                          normalData[i * normalStride + 2]));
             }
             else
             {
@@ -136,10 +150,11 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             if (tangentData)
             {
                 glm::vec3 transformedTangent =
-                    tangentMatrix * glm::vec3(tangentData[i * 4 + 0], tangentData[i * 4 + 1], tangentData[i * 4 + 2]);
+                    tangentMatrix * glm::vec3(tangentData[i * tangentStride + 0], tangentData[i * tangentStride + 1],
+                                              tangentData[i * tangentStride + 2]);
 
-                vertex.m_tangent =
-                    glm::vec4(glm::normalize(transformedTangent), tangentData[i * 4 + 3]); // Preserve handedness (w)
+                vertex.m_tangent = glm::vec4(glm::normalize(transformedTangent),
+                                             tangentData[i * tangentStride + 3]); // Preserve handedness (w)
             }
             else
             {
@@ -149,7 +164,8 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             // Texture coordinates (default to 0, 0 if not provided)
             if (texCoord0Data)
             {
-                vertex.m_texCoord0 = glm::vec2(texCoord0Data[i * 2 + 0], texCoord0Data[i * 2 + 1]);
+                vertex.m_texCoord0 =
+                    glm::vec2(texCoord0Data[i * texCoord0Stride + 0], texCoord0Data[i * texCoord0Stride + 1]);
             }
             else
             {
@@ -158,7 +174,8 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
 
             if (texCoord1Data)
             {
-                vertex.m_texCoord1 = glm::vec2(texCoord1Data[i * 2 + 0], texCoord1Data[i * 2 + 1]);
+                vertex.m_texCoord1 =
+                    glm::vec2(texCoord1Data[i * texCoord1Stride + 0], texCoord1Data[i * texCoord1Stride + 1]);
             }
             else
             {
@@ -168,8 +185,8 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             // Color (default to white if not provided)
             if (colorData)
             {
-                vertex.m_color =
-                    glm::vec4(colorData[i * 4 + 0], colorData[i * 4 + 1], colorData[i * 4 + 2], colorData[i * 4 + 3]);
+                vertex.m_color = glm::vec4(colorData[i * colorStride + 0], colorData[i * colorStride + 1],
+                                           colorData[i * colorStride + 2], colorData[i * colorStride + 3]);
             }
             else
             {
@@ -226,6 +243,13 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             {
                 indices.push_back(vertexOffset + i);
             }
+        }
+
+        if (!tangentData)
+        {
+            // Generate tangents if not provided
+            std::cout << "Generating tangents for submesh " << subMeshes.size() << std::endl;
+            mesh_utils::GenerateTangents(subMesh, vertices, indices);
         }
 
         subMeshes.push_back(subMesh);
@@ -285,11 +309,32 @@ void ProcessNode(const tinygltf::Model &model, int nodeIndex, const glm::mat4 &p
 void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Material> &materials)
 {
     Model::Material mat;
+
+    // Copy scalar and vector properties
     mat.m_baseColorFactor = glm::make_vec4(material.pbrMetallicRoughness.baseColorFactor.data());
     mat.m_emissiveFactor = glm::make_vec3(material.emissiveFactor.data());
     mat.m_metallicFactor = static_cast<float>(material.pbrMetallicRoughness.metallicFactor);
     mat.m_roughnessFactor = static_cast<float>(material.pbrMetallicRoughness.roughnessFactor);
+    mat.m_normalScale = static_cast<float>(material.normalTexture.scale);
+    mat.m_occlusionStrength = static_cast<float>(material.occlusionTexture.strength);
+    mat.m_alphaCutoff = static_cast<float>(material.alphaCutoff);
+    mat.m_doubleSided = material.doubleSided;
 
+    // Set alpha blending mode
+    if (material.alphaMode == "MASK")
+    {
+        mat.m_alphaMode = Model::AlphaMode::Mask;
+    }
+    else if (material.alphaMode == "BLEND")
+    {
+        mat.m_alphaMode = Model::AlphaMode::Blend;
+    }
+    else
+    {
+        mat.m_alphaMode = Model::AlphaMode::Opaque;
+    }
+
+    // Copy texture indices
     mat.m_baseColorTexture = material.pbrMetallicRoughness.baseColorTexture.index;
     mat.m_metallicRoughnessTexture = material.pbrMetallicRoughness.metallicRoughnessTexture.index;
     mat.m_normalTexture = material.normalTexture.index;
@@ -306,6 +351,11 @@ void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Mate
               << mat.m_emissiveFactor.b << std::endl;
     std::cout << "  Metallic Factor: " << mat.m_metallicFactor << std::endl;
     std::cout << "  Roughness Factor: " << mat.m_roughnessFactor << std::endl;
+    std::cout << "  Normal Scale: " << mat.m_normalScale << std::endl;
+    std::cout << "  Occlusion Strength: " << mat.m_occlusionStrength << std::endl;
+    std::cout << "  Alpha Mode: " << (mat.m_alphaMode == Model::AlphaMode::Mask ? "MASK" : (mat.m_alphaMode == Model::AlphaMode::Blend ? "BLEND" : "OPAQUE")) << std::endl;
+    std::cout << "  Alpha Cutoff: " << mat.m_alphaCutoff << std::endl;
+    std::cout << "  Double Sided: " << mat.m_doubleSided << std::endl;
     std::cout << "  Base Color Texture: " << mat.m_baseColorTexture << std::endl;
     std::cout << "  Metallic-Roughness Texture: " << mat.m_metallicRoughnessTexture << std::endl;
     std::cout << "  Normal Texture: " << mat.m_normalTexture << std::endl;

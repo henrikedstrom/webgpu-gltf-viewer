@@ -23,6 +23,8 @@ set(SOURCE_FILES
   src/float16.cpp
   src/main.cpp
   src/mipmap_generator.cpp
+  src/mikktspace.c
+  src/mesh_utils.cpp
   src/model.cpp
   src/orbit_controls.cpp
   src/renderer.cpp
@@ -36,6 +38,8 @@ set(HEADER_FILES
   src/environment_preprocessor.h
   src/float16.h
   src/mipmap_generator.h
+  src/mikktspace.h
+  src/mesh_utils.h
   src/model.h
   src/orbit_controls.h
   src/renderer.h

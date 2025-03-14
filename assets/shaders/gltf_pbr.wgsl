@@ -15,6 +15,15 @@ struct ModelUniforms {
     normalMatrix: mat4x4<f32>
 };
 
+struct MaterialUniforms {
+    baseColorFactor: vec4<f32>,
+    emissiveFactor: vec3<f32>,
+    metallicFactor: f32,
+    roughnessFactor: f32,
+    normalScale: f32,
+    occlusionStrength: f32
+};
+
 //---------------------------------------------------------------------
 // Constants and Types
 
@@ -47,7 +56,8 @@ struct VertexOutput {
     @location(1) texCoord0: vec2<f32>,          // Texture coordinate 0
     @location(2) texCoord1: vec2<f32>,          // Texture coordinate 1
     @location(3) normalWorld: vec3<f32>,        // Normal vector (in World Space)
-    @location(4) viewDirectionWorld: vec3<f32>  // View direction (in World Space)
+    @location(4) tangentWorld: vec4<f32>,       // Tangent vector (in World Space)
+    @location(5) viewDirectionWorld: vec3<f32>  // View direction (in World Space)
 };
 
 //---------------------------------------------------------------------
@@ -62,12 +72,13 @@ struct VertexOutput {
 @group(0) @binding(6) var iblBRDFIntegrationLUTSampler: sampler;
 
 @group(1) @binding(0) var<uniform> modelUniforms: ModelUniforms;
-@group(1) @binding(1) var textureSampler: sampler;
-@group(1) @binding(2) var baseColorTexture: texture_2d<f32>;
-@group(1) @binding(3) var metallicRoughnessTexture: texture_2d<f32>;
-@group(1) @binding(4) var normalTexture: texture_2d<f32>;
-@group(1) @binding(5) var occlusionTexture: texture_2d<f32>;
-@group(1) @binding(6) var emissiveTexture: texture_2d<f32>;
+@group(1) @binding(1) var<uniform> materialUniforms: MaterialUniforms;
+@group(1) @binding(2) var textureSampler: sampler;
+@group(1) @binding(3) var baseColorTexture: texture_2d<f32>;
+@group(1) @binding(4) var metallicRoughnessTexture: texture_2d<f32>;
+@group(1) @binding(5) var normalTexture: texture_2d<f32>;
+@group(1) @binding(6) var occlusionTexture: texture_2d<f32>;
+@group(1) @binding(7) var emissiveTexture: texture_2d<f32>;
 
 
 //---------------------------------------------------------------------
@@ -78,19 +89,18 @@ fn clampedDot(a: vec3f, b: vec3f) -> f32 {
 }
 
 fn getNormal(in: VertexOutput) -> vec3f {
-  let tangent_normal = textureSample(normalTexture, textureSampler, in.texCoord0).xyz * 2.0 - 1.0;
+    // Reconstruct the TBN matrix using interpolated normal and tangent
+    let N = normalize(in.normalWorld);
+    let T = normalize(in.tangentWorld.xyz);
+    let B = cross(N, T) * in.tangentWorld.w; // Tangent.w is handedness
+    let TBN = mat3x3f(T, B, N);
 
-  let q1 = dpdx(in.position.xyz);
-  let q2 = dpdy(in.position.xyz);
-  let st1 = dpdx(in.texCoord0);
-  let st2 = dpdy(in.texCoord0);
+    // Sample the normal map and remap from [0,1] to [-1,1]
+    var sampledNormal = textureSample(normalTexture, textureSampler, in.texCoord0).xyz  * 2.0 - 1.0;
+    sampledNormal *= materialUniforms.normalScale; 
 
-  let N = normalize(in.normalWorld);
-  let T = normalize(q1 * st2.y - q2 * st1.y);
-  let B = -normalize(cross(N, T));
-  let TBN = mat3x3f(T, B, N);
-
-  return normalize(TBN * tangent_normal);
+    // Compute the final normal in world space
+    return normalize(TBN * sampledNormal);
 }
 
 // https://google.github.io/filament/Filament.md.html#materialsystem/specularbrdf, Eq. 18
@@ -228,12 +238,16 @@ fn toneMap(colorIn: vec3f) -> vec3f {
 
 @vertex
 fn vertexMain(in: VertexInput) -> VertexOutput {
-   
-    // Transform the position to world space
-    let worldPosition = modelUniforms.modelMatrix * vec4<f32>(in.position, 1.0);
 
-    // Transform the normal to world space using the normal matrix (3x3 inverse transpose)
-    let worldNormal = (modelUniforms.normalMatrix * vec4f(in.normal, 0.0)).xyz;
+    // Transform position and normal to world space
+    let worldPosition = modelUniforms.modelMatrix * vec4<f32>(in.position, 1.0);
+    let worldNormal = normalize((modelUniforms.normalMatrix * vec4<f32>(in.normal, 0.0)).xyz);
+
+    // Transform tangent to world space (preserving handedness in .w)
+    let worldTangent = vec4<f32>(
+        normalize((modelUniforms.normalMatrix * vec4<f32>(in.tangent.xyz, 0.0)).xyz),
+        in.tangent.w
+    );
 
     var output: VertexOutput;
     output.position = globalUniforms.projectionMatrix * globalUniforms.viewMatrix * worldPosition;
@@ -241,6 +255,7 @@ fn vertexMain(in: VertexInput) -> VertexOutput {
     output.texCoord0 = in.texCoord0;
     output.texCoord1 = in.texCoord1;
     output.normalWorld = worldNormal;
+    output.tangentWorld = worldTangent;
     output.viewDirectionWorld = globalUniforms.cameraPositionWorld - worldPosition.xyz;
     return output;
 }
@@ -259,9 +274,9 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     baseColor = pow(baseColor, vec3f(2.2));
 
     var materialInfo: MaterialInfo;
-    materialInfo.baseColor = in.color.rgb * baseColor;
-    materialInfo.metallic = metallicRoughness.b; // TODO: Multiply by metallic factor
-    materialInfo.perceptualRoughness = metallicRoughness.g; // TODO: Multiply by roughness factor
+    materialInfo.baseColor = in.color.rgb * baseColor * materialUniforms.baseColorFactor.rgb;
+    materialInfo.metallic = metallicRoughness.b * materialUniforms.metallicFactor;
+    materialInfo.perceptualRoughness = metallicRoughness.g * materialUniforms.roughnessFactor;
     materialInfo.f0_dielectric = vec3f(0.04);
     materialInfo.specularWeight = 1.0;
     materialInfo.alphaRoughness = metallicRoughness.g * metallicRoughness.g;
@@ -290,7 +305,7 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
         color += mix(iblDielectric, iblMetal, materialInfo.metallic);
     }
 
-    let ao = textureSample(occlusionTexture, textureSampler, in.texCoord0).r; // TODO: apply occlusion factor
+    let ao = textureSample(occlusionTexture, textureSampler, in.texCoord0).r * materialUniforms.occlusionStrength;
     color *= vec3f(ao);
 
     // Direct lighting
@@ -320,9 +335,11 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     // TEMP HACK: convert from sRGB to linear
     emissive = pow(emissive, vec3f(2.2));
 
+    emissive *= materialUniforms.emissiveFactor;
+
     color += emissive;
 
     color = toneMap(color);
-    
+
     return vec4f(color, 1.0);
 }

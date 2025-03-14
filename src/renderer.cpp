@@ -44,14 +44,17 @@ constexpr uint32_t kPrecomputedSpecularMapSize = 512;
 constexpr uint32_t kBRDFIntegrationLUTMapSize = 128;
 
 template <typename TextureInfo>
-void CreateTexture(const TextureInfo *textureInfo, wgpu::Device device, MipmapGenerator &mipmapGenerator,
-                   wgpu::Texture &texture, wgpu::TextureView &textureView)
+void CreateTexture(const TextureInfo *textureInfo, glm::vec4 defaultValue, wgpu::Device device,
+                   MipmapGenerator &mipmapGenerator, wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
-    // Default to 1x1 black texture (in case texture is missing)
-    const uint8_t blackPixel[] = {0, 0, 0, 255};
+    // Set default pixel value
+    const uint8_t defaultPixel[4] = {static_cast<uint8_t>(defaultValue.r * 255.0f),
+                                     static_cast<uint8_t>(defaultValue.g * 255.0f),
+                                     static_cast<uint8_t>(defaultValue.b * 255.0f),
+                                     static_cast<uint8_t>(defaultValue.a * 255.0f)};
+    const uint8_t *data = defaultPixel;
     uint32_t width = 1;
     uint32_t height = 1;
-    const uint8_t *data = const_cast<uint8_t *>(blackPixel);
 
     if (textureInfo)
     {
@@ -446,7 +449,7 @@ void Renderer::CreateBindGroupLayouts()
 
     m_globalBindGroupLayout = m_device.CreateBindGroupLayout(&globalBindGroupLayoutDescriptor);
 
-    wgpu::BindGroupLayoutEntry modelLayoutEntries[7] = {
+    wgpu::BindGroupLayoutEntry modelLayoutEntries[8] = {
         {
             .binding = 0,
             .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
@@ -455,21 +458,20 @@ void Renderer::CreateBindGroupLayouts()
                        .minBindingSize = sizeof(ModelUniforms)},
         },
         {
-            // Sampler binding
             .binding = 1,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .buffer = {.type = wgpu::BufferBindingType::Uniform,
+                       .hasDynamicOffset = false,
+                       .minBindingSize = sizeof(MaterialUniforms)},
+        },
+        {
+            // Sampler binding
+            .binding = 2,
             .visibility = wgpu::ShaderStage::Fragment,
             .sampler = {.type = wgpu::SamplerBindingType::Filtering},
         },
         {
             // Base color texture binding
-            .binding = 2,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                        .multisampled = false},
-        },
-        {
-            // Metallic-Roughness texture binding
             .binding = 3,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
@@ -477,7 +479,7 @@ void Renderer::CreateBindGroupLayouts()
                         .multisampled = false},
         },
         {
-            // Normal texture binding
+            // Metallic-Roughness texture binding
             .binding = 4,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
@@ -485,7 +487,7 @@ void Renderer::CreateBindGroupLayouts()
                         .multisampled = false},
         },
         {
-            // Occlusion texture binding
+            // Normal texture binding
             .binding = 5,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
@@ -493,8 +495,16 @@ void Renderer::CreateBindGroupLayouts()
                         .multisampled = false},
         },
         {
-            // Emissive texture binding
+            // Occlusion texture binding
             .binding = 6,
+            .visibility = wgpu::ShaderStage::Fragment,
+            .texture = {.sampleType = wgpu::TextureSampleType::Float,
+                        .viewDimension = wgpu::TextureViewDimension::e2D,
+                        .multisampled = false},
+        },
+        {
+            // Emissive texture binding
+            .binding = 7,
             .visibility = wgpu::ShaderStage::Fragment,
             .texture = {.sampleType = wgpu::TextureSampleType::Float,
                         .viewDimension = wgpu::TextureViewDimension::e2D,
@@ -504,7 +514,7 @@ void Renderer::CreateBindGroupLayouts()
     };
 
     wgpu::BindGroupLayoutDescriptor modelBindGroupLayoutDescriptor{
-        .entryCount = 7,
+        .entryCount = 8,
         .entries = modelLayoutEntries,
     };
 
@@ -653,28 +663,50 @@ void Renderer::CreateMaterials(const Model &model)
             const Model::Material &srcMat = model.GetMaterials()[i];
             Material &dstMat = m_materials[i];
 
+            // Create uniform buffer
+            wgpu::BufferDescriptor bufferDescriptor{};
+            bufferDescriptor.size = sizeof(MaterialUniforms);
+            bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+            dstMat.m_uniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
+
+            // Initialize Material Uniforms
+            dstMat.m_uniforms.baseColorFactor = srcMat.m_baseColorFactor;
+            dstMat.m_uniforms.emissiveFactor = srcMat.m_emissiveFactor;
+            dstMat.m_uniforms.metallicFactor = srcMat.m_metallicFactor;
+            dstMat.m_uniforms.roughnessFactor = srcMat.m_roughnessFactor;
+            dstMat.m_uniforms.normalScale = srcMat.m_normalScale;
+            dstMat.m_uniforms.occlusionStrength = srcMat.m_occlusionStrength;
+
+            m_device.GetQueue().WriteBuffer(dstMat.m_uniformBuffer, 0, &dstMat.m_uniforms, sizeof(MaterialUniforms));
+            
+            glm::vec4 defaultBaseColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+            glm::vec4 defaultMetallicRoughness = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+            glm::vec4 defaultNormal = glm::vec4(0.5f, 0.5f, 1.0f, 1.0f);
+            glm::vec4 defaultOcculsion = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+            glm::vec4 defaultEmissive = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+
             // Base Color Texture
-            CreateTexture(model.GetTexture(srcMat.m_baseColorTexture), m_device, mipmapGenerator,
+            CreateTexture(model.GetTexture(srcMat.m_baseColorTexture), defaultBaseColor, m_device, mipmapGenerator,
                           dstMat.m_baseColorTexture, dstMat.m_baseColorTextureView);
 
             // Metallic-Roughness
-            CreateTexture(model.GetTexture(srcMat.m_metallicRoughnessTexture), m_device, mipmapGenerator,
-                          dstMat.m_metallicRoughnessTexture, dstMat.m_metallicRoughnessTextureView);
+            CreateTexture(model.GetTexture(srcMat.m_metallicRoughnessTexture), defaultMetallicRoughness, m_device,
+                          mipmapGenerator, dstMat.m_metallicRoughnessTexture, dstMat.m_metallicRoughnessTextureView);
 
             // Normal Texture
-            CreateTexture(model.GetTexture(srcMat.m_normalTexture), m_device, mipmapGenerator, dstMat.m_normalTexture,
-                          dstMat.m_normalTextureView);
+            CreateTexture(model.GetTexture(srcMat.m_normalTexture), defaultNormal, m_device, mipmapGenerator,
+                          dstMat.m_normalTexture, dstMat.m_normalTextureView);
 
             // Occlusion Texture
-            CreateTexture(model.GetTexture(srcMat.m_occlusionTexture), m_device, mipmapGenerator,
+            CreateTexture(model.GetTexture(srcMat.m_occlusionTexture), defaultOcculsion, m_device, mipmapGenerator,
                           dstMat.m_occlusionTexture, dstMat.m_occlusionTextureView);
 
             // Emissive Texture
-            CreateTexture(model.GetTexture(srcMat.m_emissiveTexture), m_device, mipmapGenerator,
+            CreateTexture(model.GetTexture(srcMat.m_emissiveTexture), defaultEmissive, m_device, mipmapGenerator,
                           dstMat.m_emissiveTexture, dstMat.m_emissiveTextureView);
 
             // Create bind group
-            wgpu::BindGroupEntry bindGroupEntries[7] = {{
+            wgpu::BindGroupEntry bindGroupEntries[8] = {{
                                                             .binding = 0,
                                                             .buffer = m_modelUniformBuffer,
                                                             .offset = 0,
@@ -682,32 +714,38 @@ void Renderer::CreateMaterials(const Model &model)
                                                         },
                                                         {
                                                             .binding = 1,
-                                                            .sampler = m_sampler,
+                                                            .buffer = dstMat.m_uniformBuffer,
+                                                            .offset = 0,
+                                                            .size = sizeof(MaterialUniforms),
                                                         },
                                                         {
                                                             .binding = 2,
-                                                            .textureView = dstMat.m_baseColorTextureView,
+                                                            .sampler = m_sampler,
                                                         },
                                                         {
                                                             .binding = 3,
-                                                            .textureView = dstMat.m_metallicRoughnessTextureView,
+                                                            .textureView = dstMat.m_baseColorTextureView,
                                                         },
                                                         {
                                                             .binding = 4,
-                                                            .textureView = dstMat.m_normalTextureView,
+                                                            .textureView = dstMat.m_metallicRoughnessTextureView,
                                                         },
                                                         {
                                                             .binding = 5,
-                                                            .textureView = dstMat.m_occlusionTextureView,
+                                                            .textureView = dstMat.m_normalTextureView,
                                                         },
                                                         {
                                                             .binding = 6,
+                                                            .textureView = dstMat.m_occlusionTextureView,
+                                                        },
+                                                        {
+                                                            .binding = 7,
                                                             .textureView = dstMat.m_emissiveTextureView,
                                                         }};
 
             wgpu::BindGroupDescriptor bindGroupDescriptor{
                 .layout = m_modelBindGroupLayout,
-                .entryCount = 7,
+                .entryCount = 8,
                 .entries = bindGroupEntries,
             };
 
