@@ -83,6 +83,8 @@ class Renderer
         alignas(4) float roughnessFactor;
         alignas(4) float normalScale;
         alignas(4) float occlusionStrength;
+        alignas(4) float alphaCutoff; // Used for Mask mode
+        alignas(4) int alphaMode;     // 0 = Opaque, 1 = Mask, 2 = Blend
     };
 
     struct Material {

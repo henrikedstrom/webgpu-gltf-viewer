@@ -21,7 +21,9 @@ struct MaterialUniforms {
     metallicFactor: f32,
     roughnessFactor: f32,
     normalScale: f32,
-    occlusionStrength: f32
+    occlusionStrength: f32,
+    alphaCutoff: f32, 
+    alphaMode: i32,   // 0 = Opaque, 1 = Mask, 2 = Blend
 };
 
 //---------------------------------------------------------------------
@@ -268,13 +270,17 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
     // Set up material properties
     let metallicRoughness = textureSample(metallicRoughnessTexture, textureSampler, in.texCoord0).rgb;
-    var baseColor = textureSample(baseColorTexture, textureSampler, in.texCoord0).rgb;
+    var baseColor = textureSample(baseColorTexture, textureSampler, in.texCoord0).rgba;
 
     // TEMP HACK: convert from sRGB to linear
-    baseColor = pow(baseColor, vec3f(2.2));
+    baseColor = vec4(pow(baseColor.rgb, vec3<f32>(2.2)), baseColor.a);
 
+    // Modulate by vertex color and base color factor
+    baseColor *= in.color * materialUniforms.baseColorFactor;
+
+    // Set up material info struct
     var materialInfo: MaterialInfo;
-    materialInfo.baseColor = in.color.rgb * baseColor * materialUniforms.baseColorFactor.rgb;
+    materialInfo.baseColor = baseColor.rgb;
     materialInfo.metallic = metallicRoughness.b * materialUniforms.metallicFactor;
     materialInfo.perceptualRoughness = metallicRoughness.g * materialUniforms.roughnessFactor;
     materialInfo.f0_dielectric = vec3f(0.04);
@@ -329,16 +335,25 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
             color += lightColor * nDotL * BRDFSpecularGGX(materialInfo.f0, materialInfo.f90, materialInfo.alphaRoughness, 1.0, vDotH, nDotL, nDotV, nDotH);
         }
     }
-   
+
+    // Emissive   
     var emissive = textureSample(emissiveTexture, textureSampler, in.texCoord0).rgb;
 
     // TEMP HACK: convert from sRGB to linear
     emissive = pow(emissive, vec3f(2.2));
 
     emissive *= materialUniforms.emissiveFactor;
-
     color += emissive;
 
+
+    // Alpha masking. This needs to happen after all texture lookups to ensure correct gradient/derivatives.
+    if (materialUniforms.alphaMode == 1) { // Mask mode
+        if (baseColor.a < materialUniforms.alphaCutoff) {
+            discard;
+        }
+    }
+
+    // Final color output
     color = toneMap(color);
 
     return vec4f(color, 1.0);

@@ -25,7 +25,7 @@ class Model
 
     enum class AlphaMode
     {
-        Opaque,
+        Opaque = 0,
         Mask,
         Blend
     };

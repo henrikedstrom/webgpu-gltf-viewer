@@ -676,6 +676,8 @@ void Renderer::CreateMaterials(const Model &model)
             dstMat.m_uniforms.roughnessFactor = srcMat.m_roughnessFactor;
             dstMat.m_uniforms.normalScale = srcMat.m_normalScale;
             dstMat.m_uniforms.occlusionStrength = srcMat.m_occlusionStrength;
+            dstMat.m_uniforms.alphaCutoff = srcMat.m_alphaCutoff;
+            dstMat.m_uniforms.alphaMode = int(srcMat.m_alphaMode);
 
             m_device.GetQueue().WriteBuffer(dstMat.m_uniformBuffer, 0, &dstMat.m_uniforms, sizeof(MaterialUniforms));
             
