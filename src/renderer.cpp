@@ -1,4 +1,5 @@
 // Standard Library Headers
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <functional>
@@ -240,6 +241,7 @@ void Renderer::Resize(uint32_t width, uint32_t height)
 void Renderer::Render(const glm::mat4 &modelMatrix)
 {
     UpdateUniforms(modelMatrix);
+    SortTransparentMeshes(modelMatrix);
 
     wgpu::SurfaceTexture surfaceTexture;
     m_surface.GetCurrentTexture(&surfaceTexture);
@@ -276,14 +278,23 @@ void Renderer::Render(const glm::mat4 &modelMatrix)
     pass.SetPipeline(m_environmentPipeline);
     pass.Draw(6, 1, 0, 0);
 
-    // Set up model pipeline and buffers
-    pass.SetPipeline(m_modelPipeline);
+    // Set up vertex and index buffers
     pass.SetVertexBuffer(0, m_vertexBuffer);
     pass.SetIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint32);
 
-    // Draw each sub mesh of the model
-    for (auto subMesh : m_subMeshes)
+    // Draw opaque submeshes
+    pass.SetPipeline(m_modelPipelineOpaque);
+    for (auto subMesh : m_opaqueMeshes)
     {
+        pass.SetBindGroup(1, m_materials[subMesh.m_materialIndex].m_bindGroup);
+        pass.DrawIndexed(subMesh.m_indexCount, 1u, subMesh.m_firstIndex);
+    }
+
+    // Draw transparent submeshes back-to-front
+    pass.SetPipeline(m_modelPipelineTransparent);
+    for (auto depthInfo : m_transparentMeshesDepthSorted)
+    {
+        const SubMesh &subMesh = m_transparentMeshes[depthInfo.m_meshIndex];
         pass.SetBindGroup(1, m_materials[subMesh.m_materialIndex].m_bindGroup);
         pass.DrawIndexed(subMesh.m_indexCount, 1u, subMesh.m_firstIndex);
     }
@@ -304,11 +315,12 @@ void Renderer::ReloadShaders()
 {
     m_environmentPipeline = nullptr;
     m_environmentShaderModule = nullptr;
-    m_modelPipeline = nullptr;
+    m_modelPipelineOpaque = nullptr;
+    m_modelPipelineTransparent = nullptr;
     m_modelShaderModule = nullptr;
 
     CreateEnvironmentRenderPipeline();
-    CreateModelRenderPipeline();
+    CreateModelRenderPipelines();
 }
 
 void Renderer::UpdateModel(const Model &model)
@@ -319,14 +331,15 @@ void Renderer::UpdateModel(const Model &model)
 
     m_sampler = nullptr;
     m_modelShaderModule = nullptr;
-    m_modelPipeline = nullptr;
+    m_modelPipelineOpaque = nullptr;
+    m_modelPipelineTransparent = nullptr;
 
     // Create new model resources
     CreateVertexBuffer(model);
     CreateIndexBuffer(model);
     CreateSubMeshes(model);
     CreateMaterials(model);
-    CreateModelRenderPipeline();
+    CreateModelRenderPipelines();
 }
 
 void Renderer::UpdateEnvironment(const Environment &environment)
@@ -625,15 +638,24 @@ void Renderer::CreateEnvironmentTexturesAndSamplers()
 
 void Renderer::CreateSubMeshes(const Model &model)
 {
-    m_subMeshes.clear();
-    m_subMeshes.reserve(model.GetSubMeshes().size());
+    m_opaqueMeshes.clear();
+    m_transparentMeshes.clear();
+    m_opaqueMeshes.reserve(model.GetSubMeshes().size());
 
     for (auto srcSubMesh : model.GetSubMeshes())
     {
         SubMesh dstSubMesh = {.m_firstIndex = srcSubMesh.m_firstIndex,
                               .m_indexCount = srcSubMesh.m_indexCount,
-                              .m_materialIndex = srcSubMesh.m_materialIndex};
-        m_subMeshes.push_back(dstSubMesh);
+                              .m_materialIndex = srcSubMesh.m_materialIndex,
+                              .m_centroid = (srcSubMesh.m_minBounds + srcSubMesh.m_maxBounds) * 0.5f};
+        if (model.GetMaterials()[srcSubMesh.m_materialIndex].m_alphaMode == Model::AlphaMode::Blend)
+        {
+            m_transparentMeshes.push_back(dstSubMesh);
+        }
+        else
+        {
+            m_opaqueMeshes.push_back(dstSubMesh);
+        }
     }
 }
 
@@ -800,7 +822,7 @@ void Renderer::CreateGlobalBindGroup()
     m_globalBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
 
-void Renderer::CreateModelRenderPipeline()
+void Renderer::CreateModelRenderPipelines()
 {
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
     const std::string shader = LoadShaderFile("./assets/shaders/gltf_pbr.wgsl");
@@ -857,7 +879,24 @@ void Renderer::CreateModelRenderPipeline()
                                               .depthStencil = &depthStencilState,
                                               .fragment = &fragmentState};
 
-    m_modelPipeline = m_device.CreateRenderPipeline(&descriptor);
+    m_modelPipelineOpaque = m_device.CreateRenderPipeline(&descriptor);
+
+    // Set up pipeline for transparent objects
+    wgpu::BlendComponent blendComponent = {
+        .operation = wgpu::BlendOperation::Add,
+        .srcFactor = wgpu::BlendFactor::SrcAlpha,
+        .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
+    };
+
+    wgpu::BlendState blendState = {
+        .color = blendComponent,
+        .alpha = blendComponent,
+    };
+
+    colorTargetState.blend = &blendState;
+    depthStencilState.depthWriteEnabled = false; // Disable depth writes for transparent objects
+
+    m_modelPipelineTransparent = m_device.CreateRenderPipeline(&descriptor);
 }
 
 void Renderer::CreateEnvironmentRenderPipeline()
@@ -938,6 +977,37 @@ void Renderer::UpdateUniforms(const glm::mat4 &modelMatrix) const
 
     // Upload the uniforms to the GPU
     m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
+}
+
+void Renderer::SortTransparentMeshes(const glm::mat4 &modelMatrix)
+{
+    glm::mat4 modelView = m_camera->GetViewMatrix() * modelMatrix;
+
+    m_transparentMeshesDepthSorted.clear();
+    m_transparentMeshesDepthSorted.reserve(m_transparentMeshes.size());
+
+    for (uint32_t i = 0; i < m_transparentMeshes.size(); ++i)
+    {
+        SubMesh &subMesh = m_transparentMeshes[i];
+
+        glm::vec4 centroid = modelView * glm::vec4(subMesh.m_centroid, 1.0f);
+        float depth = centroid.z;
+
+        // Only add meshes in front of the camera
+        if (depth < 0.0f) {
+            SubMeshDepthInfo subMeshDepthInfo = {
+                .m_depth = depth,
+                .m_meshIndex = i
+            };
+            m_transparentMeshesDepthSorted.push_back(subMeshDepthInfo);
+        }
+    }
+
+    // Sort the transparent meshes based on depth (back to front; highest negative Z being furthest away)
+    std::sort(m_transparentMeshesDepthSorted.begin(), m_transparentMeshesDepthSorted.end(),
+              [](const SubMeshDepthInfo &a, const SubMeshDepthInfo &b) {
+                  return a.m_depth < b.m_depth;
+              });
 }
 
 void Renderer::GetAdapter(const std::function<void(wgpu::Adapter)> &callback)

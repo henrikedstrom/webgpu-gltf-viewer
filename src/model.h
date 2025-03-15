@@ -61,6 +61,8 @@ class Model
       uint32_t m_firstIndex = 0; // First index in the index buffer
       uint32_t m_indexCount = 0; // Number of indices in the submesh
       int m_materialIndex = -1;  // Material index for the submesh
+      glm::vec3 m_minBounds;
+      glm::vec3 m_maxBounds;
     };
 
     // Constructor

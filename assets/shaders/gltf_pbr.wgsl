@@ -356,5 +356,5 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     // Final color output
     color = toneMap(color);
 
-    return vec4f(color, 1.0);
+    return vec4f(color, baseColor.a);
 }

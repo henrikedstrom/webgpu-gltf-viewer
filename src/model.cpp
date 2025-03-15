@@ -44,6 +44,8 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         Model::SubMesh subMesh;
         subMesh.m_firstIndex = static_cast<uint32_t>(indices.size());
         subMesh.m_materialIndex = primitive.material;
+        subMesh.m_minBounds = glm::vec3(std::numeric_limits<float>::max());
+        subMesh.m_maxBounds = glm::vec3(std::numeric_limits<float>::lowest());
 
         uint32_t vertexOffset = static_cast<uint32_t>(vertices.size());
 
@@ -133,6 +135,10 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             glm::vec4 pos = glm::vec4(positionData[i * positionStride + 0], positionData[i * positionStride + 1],
                                       positionData[i * positionStride + 2], 1.0f);
             vertex.m_position = glm::vec3(transform * pos);
+
+            // Update bounds
+            subMesh.m_minBounds = glm::min(subMesh.m_minBounds, vertex.m_position);
+            subMesh.m_maxBounds = glm::max(subMesh.m_maxBounds, vertex.m_position);
 
             // Normal (default to 0, 0, 1 if not provided)
             if (normalData)

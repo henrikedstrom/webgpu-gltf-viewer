@@ -52,8 +52,9 @@ class Renderer
     void CreateMaterials(const Model &model);
     void CreateGlobalBindGroup();
     void CreateEnvironmentRenderPipeline();
-    void CreateModelRenderPipeline();
+    void CreateModelRenderPipelines();
     void UpdateUniforms(const glm::mat4 &modelMatrix) const;
+    void SortTransparentMeshes(const glm::mat4 &modelMatrix);
     void GetAdapter(const std::function<void(wgpu::Adapter)> &callback);
     void GetDevice(const std::function<void(wgpu::Device)> &callback);
     std::string LoadShaderFile(const std::string &filepath) const;
@@ -108,6 +109,12 @@ class Renderer
       uint32_t m_firstIndex = 0; // First index in the index buffer
       uint32_t m_indexCount = 0; // Number of indices in the submesh
       int m_materialIndex = -1;  // Material index for the submesh
+      glm::vec3 m_centroid;
+    };
+
+    struct SubMeshDepthInfo {
+      float m_depth = 0.0f;
+      uint32_t m_meshIndex = 0;
     };
 
     // Private member variables
@@ -148,12 +155,16 @@ class Renderer
     // Model related data. TODO: Move to separate class
     wgpu::ShaderModule m_modelShaderModule;
     wgpu::BindGroupLayout m_modelBindGroupLayout;
-    wgpu::RenderPipeline m_modelPipeline;
+    wgpu::RenderPipeline m_modelPipelineOpaque;
+    wgpu::RenderPipeline m_modelPipelineTransparent;
     wgpu::Buffer m_vertexBuffer;
     wgpu::Buffer m_indexBuffer;
     wgpu::Buffer m_modelUniformBuffer;
     wgpu::Sampler m_sampler;
 
-    std::vector<SubMesh> m_subMeshes;
+    std::vector<SubMesh> m_opaqueMeshes;
+    std::vector<SubMesh> m_transparentMeshes;
     std::vector<Material> m_materials;
+
+    std::vector<SubMeshDepthInfo> m_transparentMeshesDepthSorted;
 };
