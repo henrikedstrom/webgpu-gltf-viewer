@@ -1,3 +1,6 @@
+// Standard Library Headers
+#include <iostream>
+
 // Third-Party Library Headers
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -94,8 +97,18 @@ void Camera::Pan(int dx, int dy)
     m_target += m_up * delta_y + m_right * delta_x;
 }
 
-void Camera::ResetToModel(const glm::vec3 &minBounds, const glm::vec3 &maxBounds)
+void Camera::ResetToModel(glm::vec3 minBounds, glm::vec3 maxBounds)
 {
+    // Check for empty bounds
+    if (glm::any(glm::lessThanEqual(maxBounds, minBounds)))
+    {
+        // Default to unit cube if bounds are invalid
+        minBounds = glm::vec3(-0.5f);
+        maxBounds = glm::vec3(0.5f);
+        std::cerr << "Warning: Invalid model bounds. Defaulting to unit cube." << std::endl;
+    }
+
+    // Calculate the center and radius of the bounding box
     glm::vec3 center = (minBounds + maxBounds) * 0.5f;
     float radius = glm::length(maxBounds - minBounds) * 0.5f;
     float distance = radius / sin(glm::radians(GetFOV() * 0.5f));

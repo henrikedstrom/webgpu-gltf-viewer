@@ -26,7 +26,7 @@ class Camera
     void Tumble(int dx, int dy);
     void Zoom(int dx, int dy);
     void Pan(int dx, int dy);
-    void ResetToModel(const glm::vec3 &minBounds, const glm::vec3 &maxBounds);
+    void ResetToModel(glm::vec3 minBounds, glm::vec3 maxBounds);
     void ResizeViewport(int width, int height);
 
     // Accessors
