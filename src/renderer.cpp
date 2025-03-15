@@ -45,7 +45,7 @@ constexpr uint32_t kPrecomputedSpecularMapSize = 512;
 constexpr uint32_t kBRDFIntegrationLUTMapSize = 128;
 
 template <typename TextureInfo>
-void CreateTexture(const TextureInfo *textureInfo, glm::vec4 defaultValue, wgpu::Device device,
+void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, glm::vec4 defaultValue, wgpu::Device device,
                    MipmapGenerator &mipmapGenerator, wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
     // Set default pixel value
@@ -72,15 +72,15 @@ void CreateTexture(const TextureInfo *textureInfo, glm::vec4 defaultValue, wgpu:
     textureDescriptor.size = {width, height, 1};
     textureDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
     textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
-                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc |
-                              wgpu::TextureUsage::RenderAttachment;
+                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc;
     textureDescriptor.mipLevelCount = mipLevelCount;
 
-    texture = device.CreateTexture(&textureDescriptor);
+    // Create an intermediate texture for generating mipmaps
+    wgpu::Texture intermediateTexture = device.CreateTexture(&textureDescriptor);
 
     // Upload the texture data
     wgpu::ImageCopyTexture imageCopyTexture{};
-    imageCopyTexture.texture = texture;
+    imageCopyTexture.texture = intermediateTexture;
     imageCopyTexture.mipLevel = 0;
     imageCopyTexture.origin = {0, 0, 0};
     imageCopyTexture.aspect = wgpu::TextureAspect::All;
@@ -94,11 +94,36 @@ void CreateTexture(const TextureInfo *textureInfo, glm::vec4 defaultValue, wgpu:
                                    &textureDescriptor.size);
 
     // Generate mipmaps
-    mipmapGenerator.GenerateMipmaps(texture, textureDescriptor.size, false);
+    mipmapGenerator.GenerateMipmaps(intermediateTexture, textureDescriptor.size, false);
+
+    // Set TextureDescriptor properties for the final texture
+    textureDescriptor.format = format;
+    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+
+    // Create the final texture
+    texture = device.CreateTexture(&textureDescriptor);
+
+    // Copy the intermediate texture to the final texture
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+
+    for (uint32_t level = 0; level < mipLevelCount; ++level)
+    {
+        uint32_t mipWidth = std::max(width >> level, 1u);
+        uint32_t mipHeight = std::max(height >> level, 1u);
+        wgpu::ImageCopyTexture src = {
+            .texture = intermediateTexture, .mipLevel = level, .origin = {0, 0, 0}, .aspect = wgpu::TextureAspect::All};
+        wgpu::ImageCopyTexture dst = {
+            .texture = texture, .mipLevel = level, .origin = {0, 0, 0}, .aspect = wgpu::TextureAspect::All};
+        wgpu::Extent3D extent = {mipWidth, mipHeight, 1};
+        encoder.CopyTextureToTexture(&src, &dst, &extent);
+    }
+
+    wgpu::CommandBuffer commandBuffer = encoder.Finish();
+    device.GetQueue().Submit(1, &commandBuffer);
 
     // Create a texture view covering all mip levels
     wgpu::TextureViewDescriptor viewDescriptor{};
-    viewDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    viewDescriptor.format = format;
     viewDescriptor.dimension = wgpu::TextureViewDimension::e2D;
     viewDescriptor.mipLevelCount = mipLevelCount;
     viewDescriptor.arrayLayerCount = 1;
@@ -121,8 +146,7 @@ void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, Mipm
     textureDescriptor.size = {width, height, 6};
     textureDescriptor.format = wgpu::TextureFormat::RGBA16Float;
     textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
-                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc |
-                              wgpu::TextureUsage::RenderAttachment;
+                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc;
     textureDescriptor.mipLevelCount = mipLevelCount;
 
     texture = device.CreateTexture(&textureDescriptor);
@@ -173,8 +197,7 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
     textureDescriptor.size = size;
     textureDescriptor.format = wgpu::TextureFormat::RGBA16Float;
     textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
-                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc |
-                              wgpu::TextureUsage::RenderAttachment;
+                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc;
     textureDescriptor.mipLevelCount = mipmapping ? mipLevelCount : 1;
 
     texture = device.CreateTexture(&textureDescriptor);
@@ -710,24 +733,28 @@ void Renderer::CreateMaterials(const Model &model)
             glm::vec4 defaultEmissive = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
             // Base Color Texture
-            CreateTexture(model.GetTexture(srcMat.m_baseColorTexture), defaultBaseColor, m_device, mipmapGenerator,
-                          dstMat.m_baseColorTexture, dstMat.m_baseColorTextureView);
+            CreateTexture(model.GetTexture(srcMat.m_baseColorTexture), wgpu::TextureFormat::RGBA8UnormSrgb,
+                          defaultBaseColor, m_device, mipmapGenerator, dstMat.m_baseColorTexture,
+                          dstMat.m_baseColorTextureView);
 
             // Metallic-Roughness
-            CreateTexture(model.GetTexture(srcMat.m_metallicRoughnessTexture), defaultMetallicRoughness, m_device,
-                          mipmapGenerator, dstMat.m_metallicRoughnessTexture, dstMat.m_metallicRoughnessTextureView);
+            CreateTexture(model.GetTexture(srcMat.m_metallicRoughnessTexture), wgpu::TextureFormat::RGBA8Unorm,
+                          defaultMetallicRoughness, m_device, mipmapGenerator, dstMat.m_metallicRoughnessTexture,
+                          dstMat.m_metallicRoughnessTextureView);
 
             // Normal Texture
-            CreateTexture(model.GetTexture(srcMat.m_normalTexture), defaultNormal, m_device, mipmapGenerator,
-                          dstMat.m_normalTexture, dstMat.m_normalTextureView);
+            CreateTexture(model.GetTexture(srcMat.m_normalTexture), wgpu::TextureFormat::RGBA8Unorm, defaultNormal,
+                          m_device, mipmapGenerator, dstMat.m_normalTexture, dstMat.m_normalTextureView);
 
             // Occlusion Texture
-            CreateTexture(model.GetTexture(srcMat.m_occlusionTexture), defaultOcculsion, m_device, mipmapGenerator,
-                          dstMat.m_occlusionTexture, dstMat.m_occlusionTextureView);
+            CreateTexture(model.GetTexture(srcMat.m_occlusionTexture), wgpu::TextureFormat::RGBA8Unorm,
+                          defaultOcculsion, m_device, mipmapGenerator, dstMat.m_occlusionTexture,
+                          dstMat.m_occlusionTextureView);
 
             // Emissive Texture
-            CreateTexture(model.GetTexture(srcMat.m_emissiveTexture), defaultEmissive, m_device, mipmapGenerator,
-                          dstMat.m_emissiveTexture, dstMat.m_emissiveTextureView);
+            CreateTexture(model.GetTexture(srcMat.m_emissiveTexture), wgpu::TextureFormat::RGBA8UnormSrgb,
+                          defaultEmissive, m_device, mipmapGenerator, dstMat.m_emissiveTexture,
+                          dstMat.m_emissiveTextureView);
 
             // Create bind group
             wgpu::BindGroupEntry bindGroupEntries[8] = {{

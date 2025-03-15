@@ -32,7 +32,7 @@ struct MaterialUniforms {
 const pi = 3.141592653589793;
 
 struct MaterialInfo {
-    baseColor: vec3f,
+    baseColor: vec4f,
     metallic: f32,
     perceptualRoughness: f32,
     f0_dielectric: vec3f,
@@ -268,25 +268,19 @@ fn vertexMain(in: VertexInput) -> VertexOutput {
 @fragment
 fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
-    // Set up material properties
+    // Sample base color and metallic-roughness textures
+    let baseColor = textureSample(baseColorTexture, textureSampler, in.texCoord0).rgba;
     let metallicRoughness = textureSample(metallicRoughnessTexture, textureSampler, in.texCoord0).rgb;
-    var baseColor = textureSample(baseColorTexture, textureSampler, in.texCoord0).rgba;
 
-    // TEMP HACK: convert from sRGB to linear
-    baseColor = vec4(pow(baseColor.rgb, vec3<f32>(2.2)), baseColor.a);
-
-    // Modulate by vertex color and base color factor
-    baseColor *= in.color * materialUniforms.baseColorFactor;
-
-    // Set up material info struct
+    // Fill out the material info struct
     var materialInfo: MaterialInfo;
-    materialInfo.baseColor = baseColor.rgb;
+    materialInfo.baseColor = baseColor * in.color * materialUniforms.baseColorFactor;
     materialInfo.metallic = metallicRoughness.b * materialUniforms.metallicFactor;
     materialInfo.perceptualRoughness = metallicRoughness.g * materialUniforms.roughnessFactor;
     materialInfo.f0_dielectric = vec3f(0.04);
     materialInfo.specularWeight = 1.0;
     materialInfo.alphaRoughness = metallicRoughness.g * metallicRoughness.g;
-    materialInfo.f0 = mix(vec3f(0.04), materialInfo.baseColor, materialInfo.metallic);
+    materialInfo.f0 = mix(vec3f(0.04), materialInfo.baseColor.rgb, materialInfo.metallic);
     materialInfo.f90 = vec3f(1.0);
     materialInfo.cDiffuse = mix(materialInfo.baseColor.rgb * 0.5, vec3f(0.0), materialInfo.metallic);
     
@@ -299,13 +293,13 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
     {
         // Sample the irradiance texture
         let diffuseEnv = textureSample(iblIrradianceTexture, iblSampler, in.normalWorld).rgb;
-        let iblDiffuse = diffuseEnv * materialInfo.baseColor;
+        let iblDiffuse = diffuseEnv * materialInfo.baseColor.rgb;
 
         // Sample the specular texture
         let iblSpecular         = getIBLRadianceGGX(n, v, materialInfo.perceptualRoughness);
         let fresnelDielectric   = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.f0_dielectric, materialInfo.specularWeight);
         let iblDielectric       = mix(iblDiffuse, iblSpecular, fresnelDielectric);
-        let fresnelMetal        = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.baseColor, 1.0);
+        let fresnelMetal        = getIBLGGXFresnel(n, v, materialInfo.perceptualRoughness, materialInfo.baseColor.rgb, 1.0);
         let iblMetal            = fresnelMetal * iblSpecular;
 
         color += mix(iblDielectric, iblMetal, materialInfo.metallic);
@@ -338,13 +332,8 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
 
     // Emissive   
     var emissive = textureSample(emissiveTexture, textureSampler, in.texCoord0).rgb;
-
-    // TEMP HACK: convert from sRGB to linear
-    emissive = pow(emissive, vec3f(2.2));
-
     emissive *= materialUniforms.emissiveFactor;
     color += emissive;
-
 
     // Alpha masking. This needs to happen after all texture lookups to ensure correct gradient/derivatives.
     if (materialUniforms.alphaMode == 1) { // Mask mode
