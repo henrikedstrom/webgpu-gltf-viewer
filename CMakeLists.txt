@@ -68,6 +68,7 @@ target_link_libraries(app PRIVATE glm)
 # Emscripten-specific settings
 if(EMSCRIPTEN)
   set_target_properties(app PROPERTIES SUFFIX ".html")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
   target_link_options(app PRIVATE 
     -sUSE_WEBGPU=1 
     -sUSE_GLFW=3 
