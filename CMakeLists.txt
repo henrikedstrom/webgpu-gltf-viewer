@@ -27,6 +27,7 @@ set(SOURCE_FILES
   src/mesh_utils.cpp
   src/model.cpp
   src/orbit_controls.cpp
+  src/panorama_to_cubemap_converter.cpp
   src/renderer.cpp
 )
 
@@ -42,6 +43,7 @@ set(HEADER_FILES
   src/mesh_utils.h
   src/model.h
   src/orbit_controls.h
+  src/panorama_to_cubemap_converter.h
   src/renderer.h
 )
 

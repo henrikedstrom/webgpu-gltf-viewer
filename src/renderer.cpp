@@ -32,6 +32,7 @@
 #include "mipmap_generator.h"
 #include "model.h"
 #include "orbit_controls.h"
+#include "panorama_to_cubemap_converter.h"
 #include "renderer.h"
 
 //----------------------------------------------------------------------
@@ -43,6 +44,14 @@ namespace
 constexpr uint32_t kIrradianceMapSize = 64;
 constexpr uint32_t kPrecomputedSpecularMapSize = 512;
 constexpr uint32_t kBRDFIntegrationLUTMapSize = 128;
+
+int FloorPow2(int x)
+{
+    int power = 1;
+    while (power * 2 <= x)
+        power *= 2;
+    return power;
+}
 
 template <typename TextureInfo>
 void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, glm::vec4 defaultValue, wgpu::Device device,
@@ -619,11 +628,12 @@ void Renderer::CreateEnvironmentTexturesAndSamplers()
 {
     MipmapGenerator mipmapGenerator(m_device);
 
-    // Create environment textures
-    CreateTextureCube(&m_environment->GetTexture(), m_device, mipmapGenerator, m_environmentTexture,
-                      m_environmentTextureView);
+    const Environment::Texture &panoramaTexture = m_environment->GetTexture();
+    uint32_t environmentCubeSize = FloorPow2(panoramaTexture.m_width);
 
-    // Create IBL precomputed maps
+    // Create IBL textures
+    CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube, {environmentCubeSize, environmentCubeSize, 6},
+                             true, m_environmentTexture, m_environmentTextureView);
     CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube, {kIrradianceMapSize, kIrradianceMapSize, 6},
                              true, m_iblIrradianceTexture, m_iblIrradianceTextureView);
     CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube,
@@ -633,7 +643,12 @@ void Renderer::CreateEnvironmentTexturesAndSamplers()
                              {kBRDFIntegrationLUTMapSize, kBRDFIntegrationLUTMapSize, 1}, false,
                              m_iblBrdfIntegrationLUT, m_iblBrdfIntegrationLUTView);
 
-    // Precompute maps
+    // Upload panorama texture and resample to cubemap
+    PanoramaToCubemapConverter panoramaToCubemapConverter(m_device);
+    panoramaToCubemapConverter.UploadAndConvert(panoramaTexture, m_environmentTexture);
+    mipmapGenerator.GenerateMipmaps(m_environmentTexture, {environmentCubeSize, environmentCubeSize, 6}, true);
+
+    // Precompute IBL maps
     EnvironmentPreprocessor environmentPreprocessor(m_device);
     environmentPreprocessor.GenerateMaps(m_environmentTexture, m_iblIrradianceTexture, m_iblSpecularTexture,
                                          m_iblBrdfIntegrationLUT);

@@ -18,11 +18,11 @@ class Environment
     // Types
     struct Texture
     {
-        std::string m_name;             // Name of the texture
-        uint32_t m_width = 0;           // Width of the texture
-        uint32_t m_height = 0;          // Height of the texture
-        uint32_t m_components = 0;      // Components per pixel (e.g., 3 = RGB, 4 = RGBA)
-        std::vector<Float16> m_data[6]; // Raw pixel data, stored per face
+        std::string m_name;        // Name of the texture
+        uint32_t m_width = 0;      // Width of the texture
+        uint32_t m_height = 0;     // Height of the texture
+        uint32_t m_components = 0; // Components per pixel (e.g., 3 = RGB, 4 = RGBA)
+        std::vector<float> m_data; // Raw pixel data
     };
 
     // Constructor
@@ -35,7 +35,7 @@ class Environment
     Environment &operator=(Environment &&) = default;
 
     // Public Interface
-    void Load(const std::string &filename, const uint8_t *data = 0, uint32_t size = 0);
+    bool Load(const std::string &filename, const uint8_t *data = 0, uint32_t size = 0);
     void UpdateRotation(float rotationAngle);
 
     // Accessors
