@@ -1,5 +1,5 @@
 [submodule "third_party/dawn"]
 	path = third_party/dawn
 	url = https://dawn.googlesource.com/dawn
-	branch = chromium/6778
+	branch = chromium/7258
 	shallow = true

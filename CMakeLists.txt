@@ -83,4 +83,14 @@ else()
   set(DAWN_FETCH_DEPENDENCIES ON)
   add_subdirectory("third_party/dawn" EXCLUDE_FROM_ALL)
   target_link_libraries(app PRIVATE dawn::webgpu_dawn glfw webgpu_glfw)
+
+  # Copy Dawn shared library to executable directory (Windows only)
+  if(WIN32)
+    add_custom_command(TARGET app POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_FILE:dawn::webgpu_dawn>
+      $<TARGET_FILE_DIR:app>
+      COMMENT "Copying Dawn shared library to executable directory"
+    )
+  endif()
 endif()
