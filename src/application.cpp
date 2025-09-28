@@ -236,7 +236,7 @@ void Application::ProcessFrame()
     m_model.Update(0.01f, m_animateModel);
 
     // Render a frame
-    m_renderer.Render(m_model.GetTransform());
+    m_renderer.Render();
 }
 
 void Application::OnKeyPressed(int key, int mods)

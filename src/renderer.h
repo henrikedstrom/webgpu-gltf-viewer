@@ -33,7 +33,7 @@ class Renderer
     void Initialize(GLFWwindow *window, Camera *camera, Environment *environment, const Model &model, uint32_t width,
                     uint32_t height, const std::function<void()> &callback);
     void Resize(uint32_t width, uint32_t height);
-    void Render(const glm::mat4 &modelMatrix);
+    void Render();
     void ReloadShaders();
     void UpdateModel(const Model &model);
     void UpdateEnvironment(const Environment &environment);
@@ -123,6 +123,7 @@ class Renderer
     uint32_t m_height = 0;
     Camera *m_camera = nullptr;
     Environment *m_environment = nullptr;
+    const Model *m_model = nullptr;
 
     // WebGPU variables
     wgpu::Instance m_instance;

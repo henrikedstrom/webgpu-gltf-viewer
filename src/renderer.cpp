@@ -232,6 +232,7 @@ void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *envir
     m_window = window;
     m_camera = camera;
     m_environment = environment;
+    m_model = &model;
     m_width = width;
     m_height = height;
 
@@ -270,8 +271,9 @@ void Renderer::Resize(uint32_t width, uint32_t height)
     ConfigureSurface();
 }
 
-void Renderer::Render(const glm::mat4 &modelMatrix)
+void Renderer::Render()
 {
+    const glm::mat4 modelMatrix = m_model->GetTransform();
     UpdateUniforms(modelMatrix);
     SortTransparentMeshes(modelMatrix);
 
@@ -357,6 +359,9 @@ void Renderer::ReloadShaders()
 
 void Renderer::UpdateModel(const Model &model)
 {
+    // Store the new model reference
+    m_model = &model;
+    
     // Destroy the existing model resources
     m_vertexBuffer = nullptr;
     m_indexBuffer = nullptr;
