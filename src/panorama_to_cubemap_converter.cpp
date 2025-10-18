@@ -41,7 +41,7 @@ PanoramaToCubemapConverter::PanoramaToCubemapConverter(const wgpu::Device &devic
     InitSampler();
     InitBindGroupLayouts();
     InitBindGroups();
-    InitComputePipelines();
+    InitComputePipeline();
 }
 
 void PanoramaToCubemapConverter::UploadAndConvert(const Environment::Texture &panoramaTextureInfo,
@@ -227,7 +227,7 @@ void PanoramaToCubemapConverter::InitBindGroups()
     }
 }
 
-void PanoramaToCubemapConverter::InitComputePipelines()
+void PanoramaToCubemapConverter::InitComputePipeline()
 {
     std::string shaderCode = LoadShaderFile("./assets/shaders/panorama_to_cubemap.wgsl");
 

@@ -199,7 +199,7 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
                               bool mipmapping, wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
     // Compute the number of mip levels
-    const uint32_t mipLevelCount = static_cast<uint32_t>(std::log2(std::max(size.width, size.height))) + 1;
+    const uint32_t mipLevelCount = mipmapping ? static_cast<uint32_t>(std::log2(std::max(size.width, size.height))) + 1 : 1;
 
     // Create a WebGPU texture descriptor with mipmapping enabled
     wgpu::TextureDescriptor textureDescriptor{};
@@ -207,7 +207,7 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
     textureDescriptor.format = wgpu::TextureFormat::RGBA16Float;
     textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
                               wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc;
-    textureDescriptor.mipLevelCount = mipmapping ? mipLevelCount : 1;
+    textureDescriptor.mipLevelCount = mipLevelCount;
 
     texture = device.CreateTexture(&textureDescriptor);
 
@@ -215,7 +215,7 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
     wgpu::TextureViewDescriptor viewDescriptor{};
     viewDescriptor.format = wgpu::TextureFormat::RGBA16Float;
     viewDescriptor.dimension = type;
-    viewDescriptor.mipLevelCount = mipmapping ? mipLevelCount : 1;
+    viewDescriptor.mipLevelCount = mipLevelCount;
     viewDescriptor.arrayLayerCount = size.depthOrArrayLayers;
 
     textureView = texture.CreateView(&viewDescriptor);

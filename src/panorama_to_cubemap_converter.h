@@ -40,7 +40,7 @@ class PanoramaToCubemapConverter
     void InitSampler();
     void InitBindGroupLayouts();
     void InitBindGroups();
-    void InitComputePipelines();
+    void InitComputePipeline();
 
     /// @brief Helper to create a compute pipeline given an entry point and pipeline layout descriptor.
     wgpu::ComputePipeline CreateComputePipeline(const std::string &entryPoint,
