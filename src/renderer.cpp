@@ -359,6 +359,8 @@ void Renderer::ReloadShaders()
 
 void Renderer::UpdateModel(const Model &model)
 {
+    auto t0 = std::chrono::high_resolution_clock::now();
+
     // Store the new model reference
     m_model = &model;
     
@@ -377,10 +379,16 @@ void Renderer::UpdateModel(const Model &model)
     CreateSubMeshes(model);
     CreateMaterials(model);
     CreateModelRenderPipelines();
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double totalMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    std::cout << "Updated Model WebGPU resources in " << totalMs << "ms" << std::endl;
 }
 
 void Renderer::UpdateEnvironment(const Environment &environment)
 {
+    auto t0 = std::chrono::high_resolution_clock::now();
+
     // Destroy the existing environment resources
     m_environmentTexture = nullptr;
     m_environmentTextureView = nullptr;
@@ -399,6 +407,10 @@ void Renderer::UpdateEnvironment(const Environment &environment)
     CreateEnvironmentTexturesAndSamplers();
     CreateGlobalBindGroup();
     CreateEnvironmentRenderPipeline();
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double totalMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    std::cout << "Updated Environment WebGPU resources in " << totalMs << "ms" << std::endl;
 }
 
 void Renderer::InitGraphics(const Model &model)

@@ -25,7 +25,6 @@ namespace
 
 void DownsampleTexture(Environment::Texture &texture, int origWidth, int origHeight)
 {
-
     std::cout << "Downsampling texture from " << origWidth << "x" << origHeight << " to 4096x2048." << std::endl;
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -81,6 +80,8 @@ void DownsampleTexture(Environment::Texture &texture, int origWidth, int origHei
 template <typename LoaderFunc, typename... Args>
 bool LoadFromSource(Environment::Texture &texture, LoaderFunc loader, Args &&...args)
 {
+    auto t0 = std::chrono::high_resolution_clock::now();
+
     int width = 0;
     int height = 0;
     int channels = 0;
@@ -109,7 +110,10 @@ bool LoadFromSource(Environment::Texture &texture, LoaderFunc loader, Args &&...
     texture.m_data.resize(width * height * 4);
     std::copy(data, data + (width * height * 4), texture.m_data.begin());
 
-    std::cout << "Loaded environment texture (" << width << "x" << height << ")" << std::endl;
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double durationMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    std::cout << "Loaded environment texture (" << width << "x" << height << ")" << 
+    " in " << durationMs << "ms" << std::endl;
 
     stbi_image_free(data);
 
