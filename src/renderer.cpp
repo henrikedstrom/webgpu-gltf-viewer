@@ -1,5 +1,6 @@
 // Standard Library Headers
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <functional>
