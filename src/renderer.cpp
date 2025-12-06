@@ -17,7 +17,6 @@
 #define GLM_FORCE_RIGHT_HANDED
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
-#include <glm/gtx/polar_coordinates.hpp>
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>

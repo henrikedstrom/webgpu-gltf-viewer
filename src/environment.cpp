@@ -10,7 +10,6 @@
 #define GLM_FORCE_RIGHT_HANDED
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
-#include <glm/gtx/polar_coordinates.hpp>
 
 #include <stb_image.h>
 

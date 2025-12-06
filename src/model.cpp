@@ -7,7 +7,6 @@
 #define GLM_FORCE_RIGHT_HANDED
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
-#include <glm/gtx/polar_coordinates.hpp>
 
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
