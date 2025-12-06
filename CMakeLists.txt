@@ -8,7 +8,7 @@ include(FetchContent)
 FetchContent_Declare(
   glm
   GIT_REPOSITORY https://github.com/g-truc/glm.git
-  GIT_TAG 0.9.9.8 # Replace with desired version
+  GIT_TAG 1.0.2
 )
 
 # Fetch GLM
