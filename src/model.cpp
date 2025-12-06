@@ -209,7 +209,15 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             const auto &indexBuffer = model.buffers[indexBufferView.buffer];
             const void *indexData = indexBuffer.data.data() + indexBufferView.byteOffset + indexAccessor.byteOffset;
 
-            subMesh.m_indexCount = indexAccessor.count;
+            if (indexAccessor.count > std::numeric_limits<uint32_t>::max())
+            {
+                std::cerr << "Error: Index accessor count exceeds 32-bit limit: " << indexAccessor.count << std::endl;
+                subMesh.m_indexCount = std::numeric_limits<uint32_t>::max();
+            }
+            else
+            {
+                subMesh.m_indexCount = static_cast<uint32_t>(indexAccessor.count);
+            }
 
             if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE)
             {
@@ -243,7 +251,16 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         else
         {
             // Non-indexed mesh: generate sequential indices
-            subMesh.m_indexCount = static_cast<uint32_t>(positionAccessor.count);
+            if (positionAccessor.count > std::numeric_limits<uint32_t>::max())
+            {
+                std::cerr << "Error: Position accessor count exceeds 32-bit limit: " << positionAccessor.count << std::endl;
+                subMesh.m_indexCount = std::numeric_limits<uint32_t>::max();
+            }
+            else
+            {
+                subMesh.m_indexCount = static_cast<uint32_t>(positionAccessor.count);
+            }
+            
             for (uint32_t i = 0; i < positionAccessor.count; ++i)
             {
                 indices.push_back(vertexOffset + i);
