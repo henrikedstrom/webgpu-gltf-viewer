@@ -140,60 +140,7 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, g
     textureView = texture.CreateView(&viewDescriptor);
 }
 
-template <typename TextureInfo>
-void CreateTextureCube(const TextureInfo *textureInfo, wgpu::Device device, MipmapGenerator &mipmapGenerator,
-                       wgpu::Texture &texture, wgpu::TextureView &textureView)
-{
-    uint32_t width = textureInfo->m_width;
-    uint32_t height = textureInfo->m_height;
 
-    // Compute the number of mip levels
-    uint32_t mipLevelCount = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
-
-    // Create a WebGPU texture descriptor with mipmapping enabled
-    wgpu::TextureDescriptor textureDescriptor{};
-    textureDescriptor.size = {width, height, 6};
-    textureDescriptor.format = wgpu::TextureFormat::RGBA16Float;
-    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
-                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc;
-    textureDescriptor.mipLevelCount = mipLevelCount;
-
-    texture = device.CreateTexture(&textureDescriptor);
-
-    // Upload the texture data
-    for (uint32_t face = 0; face < 6; ++face)
-    {
-        const Float16 *data = textureInfo->m_data[face].data();
-        wgpu::Extent3D textureSize = {width, height, 1};
-
-        wgpu::ImageCopyTexture imageCopyTexture{};
-        imageCopyTexture.texture = texture;
-        imageCopyTexture.mipLevel = 0;
-        imageCopyTexture.origin = {0, 0, face};
-        imageCopyTexture.aspect = wgpu::TextureAspect::All;
-
-        wgpu::TextureDataLayout source;
-        source.offset = 0;
-        source.bytesPerRow = 4 * width * sizeof(Float16);
-        source.rowsPerImage = height;
-
-        wgpu::Extent3D faceSize = {width, height, 1};
-        device.GetQueue().WriteTexture(&imageCopyTexture, data, 4 * width * height * sizeof(Float16), &source,
-                                       &faceSize);
-    }
-
-    // Generate mipmaps
-    mipmapGenerator.GenerateMipmaps(texture, textureDescriptor.size, true);
-
-    // Create a texture view covering all mip levels
-    wgpu::TextureViewDescriptor viewDescriptor{};
-    viewDescriptor.format = wgpu::TextureFormat::RGBA16Float;
-    viewDescriptor.dimension = wgpu::TextureViewDimension::Cube;
-    viewDescriptor.mipLevelCount = mipLevelCount;
-    viewDescriptor.arrayLayerCount = 6;
-
-    textureView = texture.CreateView(&viewDescriptor);
-}
 
 void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension type, wgpu::Extent3D size,
                               bool mipmapping, wgpu::Texture &texture, wgpu::TextureView &textureView)

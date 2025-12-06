@@ -9,7 +9,6 @@
 #include <glm/glm.hpp>
 
 // Project Headers
-#include "float16.h"
 
 // Environment Class
 class Environment

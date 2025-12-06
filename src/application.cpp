@@ -1,5 +1,6 @@
 // Standard Library Headers
 #include <algorithm>
+#include <iostream>
 
 // Third-Party Library Headers
 #include <GLFW/glfw3.h>

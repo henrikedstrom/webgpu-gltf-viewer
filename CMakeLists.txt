@@ -20,7 +20,6 @@ set(SOURCE_FILES
   src/camera.cpp
   src/environment.cpp
   src/environment_preprocessor.cpp
-  src/float16.cpp
   src/main.cpp
   src/mipmap_generator.cpp
   src/mikktspace.c
@@ -37,7 +36,6 @@ set(HEADER_FILES
   src/camera.h
   src/environment.h
   src/environment_preprocessor.h
-  src/float16.h
   src/mipmap_generator.h
   src/mikktspace.h
   src/mesh_utils.h
