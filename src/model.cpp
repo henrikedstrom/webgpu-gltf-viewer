@@ -302,7 +302,9 @@ void ProcessNode(const tinygltf::Model &model, int nodeIndex, const glm::mat4 &p
         }
         if (!node.rotation.empty())
         {
-            glm::quat rotationQuat = glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]);
+            glm::quat rotationQuat =
+                glm::quat(static_cast<float>(node.rotation[3]), static_cast<float>(node.rotation[0]),
+                          static_cast<float>(node.rotation[1]), static_cast<float>(node.rotation[2]));
             localTransform *= glm::mat4_cast(rotationQuat);
         }
         if (!node.scale.empty())

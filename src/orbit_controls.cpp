@@ -8,7 +8,7 @@
 //----------------------------------------------------------------------
 // OrbitControls Class Implementation
 
-OrbitControls::OrbitControls(GLFWwindow *window, Camera *camera) : m_window(window), m_camera(camera)
+OrbitControls::OrbitControls(GLFWwindow *window, Camera *camera) : m_camera(camera)
 {
     glfwSetWindowUserPointer(window, this);
     glfwSetCursorPosCallback(window, CursorPositionCallback);
@@ -42,7 +42,7 @@ void OrbitControls::CursorPositionCallback(GLFWwindow *window, double xpos, doub
     }
 }
 
-void OrbitControls::ScrollCallback(GLFWwindow *window, double xoffset, double yoffset) noexcept
+void OrbitControls::ScrollCallback(GLFWwindow *window, [[maybe_unused]] double xoffset, double yoffset) noexcept
 {
     auto controls = static_cast<OrbitControls *>(glfwGetWindowUserPointer(window));
     if (!controls)

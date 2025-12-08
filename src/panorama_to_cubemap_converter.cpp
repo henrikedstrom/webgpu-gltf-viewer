@@ -52,58 +52,55 @@ void PanoramaToCubemapConverter::UploadAndConvert(const Environment::Texture &pa
     const float *data = panoramaTextureInfo.m_data.data();
 
     // Create WebGPU texture descriptor for the input panorama texture
-    wgpu::TextureDescriptor textureDescriptor{
-        .usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding | wgpu::TextureUsage::CopyDst |
-                 wgpu::TextureUsage::CopySrc,
-        .size = {width, height, 1},
-        .format = wgpu::TextureFormat::RGBA32Float,
-        .mipLevelCount = 1,
-    };
+    wgpu::TextureDescriptor textureDescriptor{};
+    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
+                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc;
+    textureDescriptor.size = {width, height, 1};
+    textureDescriptor.format = wgpu::TextureFormat::RGBA32Float;
+    textureDescriptor.mipLevelCount = 1;
     wgpu::Texture panoramaTexture = m_device.CreateTexture(&textureDescriptor);
 
     // Upload the texture data
     wgpu::Extent3D textureSize = {width, height, 1};
-    wgpu::ImageCopyTexture imageCopyTexture{
-        .texture = panoramaTexture,
-        .mipLevel = 0,
-        .origin = {0, 0, 0},
-        .aspect = wgpu::TextureAspect::All,
-    };
-    wgpu::TextureDataLayout source{
-        .offset = 0,
-        .bytesPerRow = static_cast<uint32_t>(4 * width * sizeof(float)),
-        .rowsPerImage = height,
-    };
+    wgpu::ImageCopyTexture imageCopyTexture{};
+    imageCopyTexture.texture = panoramaTexture;
+    imageCopyTexture.mipLevel = 0;
+    imageCopyTexture.origin = {0, 0, 0};
+    imageCopyTexture.aspect = wgpu::TextureAspect::All;
+    wgpu::TextureDataLayout source{};
+    source.offset = 0;
+    source.bytesPerRow = static_cast<uint32_t>(4 * width * sizeof(float));
+    source.rowsPerImage = height;
     m_device.GetQueue().WriteTexture(&imageCopyTexture, data, 4 * width * height * sizeof(float), &source,
                                      &textureSize);
 
     // Create views for the input panorama and output cubemap.
-    wgpu::TextureViewDescriptor inputViewDesc{
-        .format = wgpu::TextureFormat::RGBA32Float,
-        .dimension = wgpu::TextureViewDimension::e2D,
-        .baseArrayLayer = 0,
-        .arrayLayerCount = 1,
-    };
-    wgpu::TextureViewDescriptor outputCubeViewDesc{
-        .format = wgpu::TextureFormat::RGBA16Float,
-        .dimension = wgpu::TextureViewDimension::e2DArray,
-        .baseMipLevel = 0,
-        .mipLevelCount = 1,
-        .baseArrayLayer = 0,
-        .arrayLayerCount = 6,
-    };
+    wgpu::TextureViewDescriptor inputViewDesc{};
+    inputViewDesc.format = wgpu::TextureFormat::RGBA32Float;
+    inputViewDesc.dimension = wgpu::TextureViewDimension::e2D;
+    inputViewDesc.baseArrayLayer = 0;
+    inputViewDesc.arrayLayerCount = 1;
+    wgpu::TextureViewDescriptor outputCubeViewDesc{};
+    outputCubeViewDesc.format = wgpu::TextureFormat::RGBA16Float;
+    outputCubeViewDesc.dimension = wgpu::TextureViewDimension::e2DArray;
+    outputCubeViewDesc.baseMipLevel = 0;
+    outputCubeViewDesc.mipLevelCount = 1;
+    outputCubeViewDesc.baseArrayLayer = 0;
+    outputCubeViewDesc.arrayLayerCount = 6;
 
     // Bind group 0 - common for all faces
-    wgpu::BindGroupEntry bindGroup0Entries[] = {
-        {.binding = 0, .sampler = m_sampler},
-        {.binding = 1, .textureView = panoramaTexture.CreateView(&inputViewDesc)},
-        {.binding = 2, .textureView = environmentCubemap.CreateView(&outputCubeViewDesc)},
-    };
-    wgpu::BindGroupDescriptor bindGroup0Descriptor{
-        .layout = m_bindGroupLayouts[0],
-        .entryCount = 3,
-        .entries = bindGroup0Entries,
-    };
+    wgpu::BindGroupEntry bindGroup0Entries[3]{};
+    bindGroup0Entries[0].binding = 0;
+    bindGroup0Entries[0].sampler = m_sampler;
+    bindGroup0Entries[1].binding = 1;
+    bindGroup0Entries[1].textureView = panoramaTexture.CreateView(&inputViewDesc);
+    bindGroup0Entries[2].binding = 2;
+    bindGroup0Entries[2].textureView = environmentCubemap.CreateView(&outputCubeViewDesc);
+
+    wgpu::BindGroupDescriptor bindGroup0Descriptor{};
+    bindGroup0Descriptor.layout = m_bindGroupLayouts[0];
+    bindGroup0Descriptor.entryCount = 3;
+    bindGroup0Descriptor.entries = bindGroup0Entries;
     wgpu::BindGroup bindGroup0 = m_device.CreateBindGroup(&bindGroup0Descriptor);
 
     // Create a command encoder and compute pass.
@@ -139,10 +136,9 @@ void PanoramaToCubemapConverter::UploadAndConvert(const Environment::Texture &pa
 void PanoramaToCubemapConverter::InitUniformBuffers()
 {
     // Create a buffer for each face of the cubemap
-    wgpu::BufferDescriptor bufferDescriptor{
-        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-        .size = sizeof(uint32_t),
-    };
+    wgpu::BufferDescriptor bufferDescriptor{};
+    bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    bufferDescriptor.size = sizeof(uint32_t);
 
     for (uint32_t face = 0; face < 6; ++face)
     {
@@ -167,46 +163,41 @@ void PanoramaToCubemapConverter::InitSampler()
 
 void PanoramaToCubemapConverter::InitBindGroupLayouts()
 {
-    wgpu::BindGroupLayoutEntry samplerEntry{
-        .binding = 0,
-        .visibility = wgpu::ShaderStage::Compute,
-        .sampler = {.type = wgpu::SamplerBindingType::NonFiltering},
-    };
+    wgpu::BindGroupLayoutEntry samplerEntry{};
+    samplerEntry.binding = 0;
+    samplerEntry.visibility = wgpu::ShaderStage::Compute;
+    samplerEntry.sampler.type = wgpu::SamplerBindingType::NonFiltering;
 
-    wgpu::BindGroupLayoutEntry inputTextureEntry{
-        .binding = 1,
-        .visibility = wgpu::ShaderStage::Compute,
-        .texture = {.sampleType = wgpu::TextureSampleType::UnfilterableFloat,
-                    .viewDimension = wgpu::TextureViewDimension::e2D,
-                    .multisampled = false},
-    };
+    wgpu::BindGroupLayoutEntry inputTextureEntry{};
+    inputTextureEntry.binding = 1;
+    inputTextureEntry.visibility = wgpu::ShaderStage::Compute;
+    inputTextureEntry.texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
+    inputTextureEntry.texture.viewDimension = wgpu::TextureViewDimension::e2D;
+    inputTextureEntry.texture.multisampled = false;
 
-    wgpu::BindGroupLayoutEntry outputCubemapEntry{
-        .binding = 2,
-        .visibility = wgpu::ShaderStage::Compute,
-        .storageTexture = {.access = wgpu::StorageTextureAccess::WriteOnly,
-                           .format = wgpu::TextureFormat::RGBA16Float,
-                           .viewDimension = wgpu::TextureViewDimension::e2DArray},
-    };
+    wgpu::BindGroupLayoutEntry outputCubemapEntry{};
+    outputCubemapEntry.binding = 2;
+    outputCubemapEntry.visibility = wgpu::ShaderStage::Compute;
+    outputCubemapEntry.storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
+    outputCubemapEntry.storageTexture.format = wgpu::TextureFormat::RGBA16Float;
+    outputCubemapEntry.storageTexture.viewDimension = wgpu::TextureViewDimension::e2DArray;
 
     wgpu::BindGroupLayoutEntry group0Entries[] = {samplerEntry, inputTextureEntry, outputCubemapEntry};
-    wgpu::BindGroupLayoutDescriptor group0LayoutDesc{
-        .entryCount = 3,
-        .entries = group0Entries,
-    };
+    wgpu::BindGroupLayoutDescriptor group0LayoutDesc{};
+    group0LayoutDesc.entryCount = 3;
+    group0LayoutDesc.entries = group0Entries;
     m_bindGroupLayouts[0] = m_device.CreateBindGroupLayout(&group0LayoutDesc);
 
-    wgpu::BindGroupLayoutEntry faceIndexEntry{
-        .binding = 0,
-        .visibility = wgpu::ShaderStage::Compute,
-        .buffer = {.type = wgpu::BufferBindingType::Uniform, .minBindingSize = sizeof(uint32_t)},
-    };
+    wgpu::BindGroupLayoutEntry faceIndexEntry{};
+    faceIndexEntry.binding = 0;
+    faceIndexEntry.visibility = wgpu::ShaderStage::Compute;
+    faceIndexEntry.buffer.type = wgpu::BufferBindingType::Uniform;
+    faceIndexEntry.buffer.minBindingSize = sizeof(uint32_t);
 
     wgpu::BindGroupLayoutEntry group1Entries[] = {faceIndexEntry};
-    wgpu::BindGroupLayoutDescriptor group1LayoutDesc{
-        .entryCount = 1,
-        .entries = group1Entries,
-    };
+    wgpu::BindGroupLayoutDescriptor group1LayoutDesc{};
+    group1LayoutDesc.entryCount = 1;
+    group1LayoutDesc.entries = group1Entries;
     m_bindGroupLayouts[1] = m_device.CreateBindGroupLayout(&group1LayoutDesc);
 }
 
@@ -215,14 +206,14 @@ void PanoramaToCubemapConverter::InitBindGroups()
     // Create bind groups for per-face uniform buffers
     for (uint32_t face = 0; face < 6; ++face)
     {
-        wgpu::BindGroupEntry bindGroupEntries[] = {
-            {.binding = 0, .buffer = m_perFaceUniformBuffers[face]},
-        };
-        wgpu::BindGroupDescriptor bindGroupDescriptor{
-            .layout = m_bindGroupLayouts[1],
-            .entryCount = 1,
-            .entries = bindGroupEntries,
-        };
+        wgpu::BindGroupEntry bindGroupEntries[1]{};
+        bindGroupEntries[0].binding = 0;
+        bindGroupEntries[0].buffer = m_perFaceUniformBuffers[face];
+
+        wgpu::BindGroupDescriptor bindGroupDescriptor{};
+        bindGroupDescriptor.layout = m_bindGroupLayouts[1];
+        bindGroupDescriptor.entryCount = 1;
+        bindGroupDescriptor.entries = bindGroupEntries;
         m_perFaceBindGroups[face] = m_device.CreateBindGroup(&bindGroupDescriptor);
     }
 }
@@ -234,27 +225,23 @@ void PanoramaToCubemapConverter::InitComputePipeline()
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
     wgslDesc.code = shaderCode.c_str();
 
-    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgslDesc};
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
+    shaderModuleDescriptor.nextInChain = &wgslDesc;
     wgpu::ShaderModule computeShaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::BindGroupLayout pipelineBindGroups[] = {
         m_bindGroupLayouts[0],
         m_bindGroupLayouts[1],
     };
-    wgpu::PipelineLayoutDescriptor layoutDescriptor{
-        .bindGroupLayoutCount = 2,
-        .bindGroupLayouts = pipelineBindGroups,
-    };
+    wgpu::PipelineLayoutDescriptor layoutDescriptor{};
+    layoutDescriptor.bindGroupLayoutCount = 2;
+    layoutDescriptor.bindGroupLayouts = pipelineBindGroups;
 
     wgpu::PipelineLayout pipelineLayout = m_device.CreatePipelineLayout(&layoutDescriptor);
 
-    wgpu::ComputePipelineDescriptor descriptor{
-        .layout = pipelineLayout,
-        .compute =
-            {
-                .module = computeShaderModule,
-            },
-    };
+    wgpu::ComputePipelineDescriptor descriptor{};
+    descriptor.layout = pipelineLayout;
+    descriptor.compute.module = computeShaderModule;
 
     descriptor.compute.entryPoint = "panoramaToCubemap";
     m_pipelineConvert = m_device.CreateComputePipeline(&descriptor);

@@ -26,7 +26,6 @@
 
 // Project Headers
 #include "application.h"
-#include "camera.h"
 #include "environment.h"
 #include "environment_preprocessor.h"
 #include "mipmap_generator.h"
@@ -54,14 +53,14 @@ int FloorPow2(int x)
 }
 
 template <typename TextureInfo>
-void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, glm::vec4 defaultValue, wgpu::Device device,
-                   MipmapGenerator &mipmapGenerator, wgpu::Texture &texture, wgpu::TextureView &textureView)
+void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, glm::vec4 defaultValue,
+                   wgpu::Device device, MipmapGenerator &mipmapGenerator, wgpu::Texture &texture,
+                   wgpu::TextureView &textureView)
 {
     // Set default pixel value
-    const uint8_t defaultPixel[4] = {static_cast<uint8_t>(defaultValue.r * 255.0f),
-                                     static_cast<uint8_t>(defaultValue.g * 255.0f),
-                                     static_cast<uint8_t>(defaultValue.b * 255.0f),
-                                     static_cast<uint8_t>(defaultValue.a * 255.0f)};
+    const uint8_t defaultPixel[4] = {
+        static_cast<uint8_t>(defaultValue.r * 255.0f), static_cast<uint8_t>(defaultValue.g * 255.0f),
+        static_cast<uint8_t>(defaultValue.b * 255.0f), static_cast<uint8_t>(defaultValue.a * 255.0f)};
     const uint8_t *data = defaultPixel;
     uint32_t width = 1;
     uint32_t height = 1;
@@ -119,10 +118,16 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, g
     {
         uint32_t mipWidth = std::max(width >> level, 1u);
         uint32_t mipHeight = std::max(height >> level, 1u);
-        wgpu::ImageCopyTexture src = {
-            .texture = intermediateTexture, .mipLevel = level, .origin = {0, 0, 0}, .aspect = wgpu::TextureAspect::All};
-        wgpu::ImageCopyTexture dst = {
-            .texture = texture, .mipLevel = level, .origin = {0, 0, 0}, .aspect = wgpu::TextureAspect::All};
+        wgpu::ImageCopyTexture src{};
+        src.texture = intermediateTexture;
+        src.mipLevel = level;
+        src.origin = {0, 0, 0};
+        src.aspect = wgpu::TextureAspect::All;
+        wgpu::ImageCopyTexture dst{};
+        dst.texture = texture;
+        dst.mipLevel = level;
+        dst.origin = {0, 0, 0};
+        dst.aspect = wgpu::TextureAspect::All;
         wgpu::Extent3D extent = {mipWidth, mipHeight, 1};
         encoder.CopyTextureToTexture(&src, &dst, &extent);
     }
@@ -140,13 +145,12 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, g
     textureView = texture.CreateView(&viewDescriptor);
 }
 
-
-
 void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension type, wgpu::Extent3D size,
                               bool mipmapping, wgpu::Texture &texture, wgpu::TextureView &textureView)
 {
     // Compute the number of mip levels
-    const uint32_t mipLevelCount = mipmapping ? static_cast<uint32_t>(std::log2(std::max(size.width, size.height))) + 1 : 1;
+    const uint32_t mipLevelCount =
+        mipmapping ? static_cast<uint32_t>(std::log2(std::max(size.width, size.height))) + 1 : 1;
 
     // Create a WebGPU texture descriptor with mipmapping enabled
     wgpu::TextureDescriptor textureDescriptor{};
@@ -173,32 +177,32 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
 //----------------------------------------------------------------------
 // Renderer Class implementation
 
-void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *environment, const Model &model,
-                          uint32_t width, uint32_t height, const std::function<void()> &callback)
+void Renderer::Initialize(GLFWwindow *window, const Environment &environment, const Model &model, uint32_t width,
+                          uint32_t height, const std::function<void()> &callback)
 {
-    m_window = window;
-    m_camera = camera;
-    m_environment = environment;
-    m_model = &model;
-    m_width = width;
-    m_height = height;
-
     m_instance = wgpu::CreateInstance();
-    GetAdapter([this, callback, &model](wgpu::Adapter adapter) {
+    // Capture pointers to avoid dangling references across async callbacks
+    const Environment *envPtr = &environment;
+    const Model *modelPtr = &model;
+    GLFWwindow *windowPtr = window;
+
+    GetAdapter([this, callback, envPtr, modelPtr, width, height, windowPtr](wgpu::Adapter adapter) {
         m_adapter = adapter;
-        GetDevice([this, callback, &model](wgpu::Device device) {
+        GetDevice([this, callback, envPtr, modelPtr, width, height, windowPtr](wgpu::Device device) {
             m_device = device;
 
 #if defined(__EMSCRIPTEN__)
+            (void)windowPtr; // Unused parameter
             wgpu::SurfaceDescriptorFromCanvasHTMLSelector canvasDesc{};
             canvasDesc.selector = "#canvas";
-            wgpu::SurfaceDescriptor surfaceDesc{.nextInChain = &canvasDesc};
+            wgpu::SurfaceDescriptor surfaceDesc{};
+            surfaceDesc.nextInChain = &canvasDesc;
             m_surface = m_instance.CreateSurface(&surfaceDesc);
 #else
-            m_surface = wgpu::glfw::CreateSurfaceForWindow(m_instance, m_window);
+            m_surface = wgpu::glfw::CreateSurfaceForWindow(m_instance, windowPtr);
 #endif
 
-            InitGraphics(model);
+            InitGraphics(*envPtr, *modelPtr, width, height);
 
             // Return control to the application
             callback();
@@ -208,21 +212,17 @@ void Renderer::Initialize(GLFWwindow *window, Camera *camera, Environment *envir
 
 void Renderer::Resize(uint32_t width, uint32_t height)
 {
-    m_width = width;
-    m_height = height;
-
     // Recreate the depth texture
-    CreateDepthTexture();
+    CreateDepthTexture(width, height);
 
     // Update the surface configuration
-    ConfigureSurface();
+    ConfigureSurface(width, height);
 }
 
-void Renderer::Render()
+void Renderer::Render(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera)
 {
-    const glm::mat4 modelMatrix = m_model->GetTransform();
-    UpdateUniforms(modelMatrix);
-    SortTransparentMeshes(modelMatrix);
+    UpdateUniforms(modelMatrix, camera);
+    SortTransparentMeshes(modelMatrix, camera.viewMatrix);
 
     wgpu::SurfaceTexture surfaceTexture;
     m_surface.GetCurrentTexture(&surfaceTexture);
@@ -232,22 +232,24 @@ void Renderer::Render()
         return;
     }
 
-    wgpu::RenderPassColorAttachment attachment{.view = surfaceTexture.texture.CreateView(),
-                                               .loadOp = wgpu::LoadOp::Clear,
-                                               .storeOp = wgpu::StoreOp::Store,
-                                               .clearValue = {.r = 0.0f, .g = 0.2f, .b = 0.4f, .a = 1.0f}};
+    wgpu::RenderPassColorAttachment attachment{};
+    attachment.view = surfaceTexture.texture.CreateView();
+    attachment.loadOp = wgpu::LoadOp::Clear;
+    attachment.storeOp = wgpu::StoreOp::Store;
+    attachment.clearValue = {.r = 0.0f, .g = 0.2f, .b = 0.4f, .a = 1.0f};
 
-    wgpu::RenderPassDepthStencilAttachment depthAttachment{
-        .view = m_depthTextureView,
-        .depthLoadOp = wgpu::LoadOp::Clear,
-        .depthStoreOp = wgpu::StoreOp::Store,
-        .depthClearValue = 1.0f, // Clear to the farthest value
-        .stencilLoadOp = wgpu::LoadOp::Clear,
-        .stencilStoreOp = wgpu::StoreOp::Store,
-    };
+    wgpu::RenderPassDepthStencilAttachment depthAttachment{};
+    depthAttachment.view = m_depthTextureView;
+    depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+    depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
+    depthAttachment.depthClearValue = 1.0f; // Clear to the farthest value
+    depthAttachment.stencilLoadOp = wgpu::LoadOp::Clear;
+    depthAttachment.stencilStoreOp = wgpu::StoreOp::Store;
 
-    wgpu::RenderPassDescriptor renderpass{
-        .colorAttachmentCount = 1, .colorAttachments = &attachment, .depthStencilAttachment = &depthAttachment};
+    wgpu::RenderPassDescriptor renderpass{};
+    renderpass.colorAttachmentCount = 1;
+    renderpass.colorAttachments = &attachment;
+    renderpass.depthStencilAttachment = &depthAttachment;
 
     wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
     wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderpass);
@@ -308,9 +310,6 @@ void Renderer::UpdateModel(const Model &model)
 {
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // Store the new model reference
-    m_model = &model;
-    
     // Destroy the existing model resources
     m_vertexBuffer = nullptr;
     m_indexBuffer = nullptr;
@@ -351,7 +350,7 @@ void Renderer::UpdateEnvironment(const Environment &environment)
     m_environmentPipeline = nullptr;
 
     // Create new environment resources
-    CreateEnvironmentTexturesAndSamplers();
+    CreateEnvironmentTexturesAndSamplers(environment);
     CreateGlobalBindGroup();
     CreateEnvironmentRenderPipeline();
 
@@ -360,34 +359,37 @@ void Renderer::UpdateEnvironment(const Environment &environment)
     std::cout << "Updated Environment WebGPU resources in " << totalMs << "ms" << std::endl;
 }
 
-void Renderer::InitGraphics(const Model &model)
+void Renderer::InitGraphics(const Environment &environment, const Model &model, uint32_t width, uint32_t height)
 {
-    ConfigureSurface();
-    CreateDepthTexture();
+    ConfigureSurface(width, height);
+    CreateDepthTexture(width, height);
 
     CreateBindGroupLayouts();
 
     CreateUniformBuffers();
 
-    UpdateEnvironment(*m_environment);
+    UpdateEnvironment(environment);
 
     UpdateModel(model);
 }
 
-void Renderer::ConfigureSurface()
+void Renderer::ConfigureSurface(uint32_t width, uint32_t height)
 {
     wgpu::SurfaceCapabilities capabilities;
     m_surface.GetCapabilities(m_adapter, &capabilities);
     m_surfaceFormat = capabilities.formats[0];
-    wgpu::SurfaceConfiguration config{
-        .device = m_device, .format = m_surfaceFormat, .width = m_width, .height = m_height};
+    wgpu::SurfaceConfiguration config{};
+    config.device = m_device;
+    config.format = m_surfaceFormat;
+    config.width = width;
+    config.height = height;
     m_surface.Configure(&config);
 }
 
-void Renderer::CreateDepthTexture()
+void Renderer::CreateDepthTexture(uint32_t width, uint32_t height)
 {
     wgpu::TextureDescriptor depthTextureDescriptor{};
-    depthTextureDescriptor.size = {m_width, m_height, 1};
+    depthTextureDescriptor.size = {width, height, 1};
     depthTextureDescriptor.format = wgpu::TextureFormat::Depth24PlusStencil8;
     depthTextureDescriptor.usage = wgpu::TextureUsage::RenderAttachment;
 
@@ -397,135 +399,94 @@ void Renderer::CreateDepthTexture()
 
 void Renderer::CreateBindGroupLayouts()
 {
-    wgpu::BindGroupLayoutEntry globalLayoutEntries[] = {
-        {
-            .binding = 0,
-            .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
-            .buffer = {.type = wgpu::BufferBindingType::Uniform,
-                       .hasDynamicOffset = false,
-                       .minBindingSize = sizeof(GlobalUniforms)},
-        },
-        {
-            // Sampler binding
-            .binding = 1,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .sampler = {.type = wgpu::SamplerBindingType::Filtering},
-        },
-        {
-            // Environment texture binding
-            .binding = 2,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::Cube,
-                        .multisampled = false},
-        },
-        {
-            // IBL irradiance texture binding
-            .binding = 3,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::Cube,
-                        .multisampled = false},
-        },
-        {
-            // IBL specular texture binding
-            .binding = 4,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::Cube,
-                        .multisampled = false},
-        },
-        {
-            // IBL LUT texture binding
-            .binding = 5,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                        .multisampled = false},
-        },
-        {
-            // IBL LUT sampler binding
-            .binding = 6,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .sampler = {.type = wgpu::SamplerBindingType::Filtering},
-        },
-    };
+    wgpu::BindGroupLayoutEntry globalLayoutEntries[7]{};
 
-    wgpu::BindGroupLayoutDescriptor globalBindGroupLayoutDescriptor{
-        .entryCount = 7,
-        .entries = globalLayoutEntries,
-    };
+    // 0: Global uniforms
+    globalLayoutEntries[0].binding = 0;
+    globalLayoutEntries[0].visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+    globalLayoutEntries[0].buffer.type = wgpu::BufferBindingType::Uniform;
+    globalLayoutEntries[0].buffer.hasDynamicOffset = false;
+    globalLayoutEntries[0].buffer.minBindingSize = sizeof(GlobalUniforms);
+
+    // 1: Sampler binding
+    globalLayoutEntries[1].binding = 1;
+    globalLayoutEntries[1].visibility = wgpu::ShaderStage::Fragment;
+    globalLayoutEntries[1].sampler.type = wgpu::SamplerBindingType::Filtering;
+
+    // 2: Environment texture binding
+    globalLayoutEntries[2].binding = 2;
+    globalLayoutEntries[2].visibility = wgpu::ShaderStage::Fragment;
+    globalLayoutEntries[2].texture.sampleType = wgpu::TextureSampleType::Float;
+    globalLayoutEntries[2].texture.viewDimension = wgpu::TextureViewDimension::Cube;
+    globalLayoutEntries[2].texture.multisampled = false;
+
+    // 3: IBL irradiance texture binding
+    globalLayoutEntries[3].binding = 3;
+    globalLayoutEntries[3].visibility = wgpu::ShaderStage::Fragment;
+    globalLayoutEntries[3].texture.sampleType = wgpu::TextureSampleType::Float;
+    globalLayoutEntries[3].texture.viewDimension = wgpu::TextureViewDimension::Cube;
+    globalLayoutEntries[3].texture.multisampled = false;
+
+    // 4: IBL specular texture binding
+    globalLayoutEntries[4].binding = 4;
+    globalLayoutEntries[4].visibility = wgpu::ShaderStage::Fragment;
+    globalLayoutEntries[4].texture.sampleType = wgpu::TextureSampleType::Float;
+    globalLayoutEntries[4].texture.viewDimension = wgpu::TextureViewDimension::Cube;
+    globalLayoutEntries[4].texture.multisampled = false;
+
+    // 5: IBL LUT texture binding
+    globalLayoutEntries[5].binding = 5;
+    globalLayoutEntries[5].visibility = wgpu::ShaderStage::Fragment;
+    globalLayoutEntries[5].texture.sampleType = wgpu::TextureSampleType::Float;
+    globalLayoutEntries[5].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+    globalLayoutEntries[5].texture.multisampled = false;
+
+    // 6: IBL LUT sampler binding
+    globalLayoutEntries[6].binding = 6;
+    globalLayoutEntries[6].visibility = wgpu::ShaderStage::Fragment;
+    globalLayoutEntries[6].sampler.type = wgpu::SamplerBindingType::Filtering;
+
+    wgpu::BindGroupLayoutDescriptor globalBindGroupLayoutDescriptor{};
+    globalBindGroupLayoutDescriptor.entryCount = 7;
+    globalBindGroupLayoutDescriptor.entries = globalLayoutEntries;
 
     m_globalBindGroupLayout = m_device.CreateBindGroupLayout(&globalBindGroupLayoutDescriptor);
 
-    wgpu::BindGroupLayoutEntry modelLayoutEntries[8] = {
-        {
-            .binding = 0,
-            .visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment,
-            .buffer = {.type = wgpu::BufferBindingType::Uniform,
-                       .hasDynamicOffset = false,
-                       .minBindingSize = sizeof(ModelUniforms)},
-        },
-        {
-            .binding = 1,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .buffer = {.type = wgpu::BufferBindingType::Uniform,
-                       .hasDynamicOffset = false,
-                       .minBindingSize = sizeof(MaterialUniforms)},
-        },
-        {
-            // Sampler binding
-            .binding = 2,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .sampler = {.type = wgpu::SamplerBindingType::Filtering},
-        },
-        {
-            // Base color texture binding
-            .binding = 3,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                        .multisampled = false},
-        },
-        {
-            // Metallic-Roughness texture binding
-            .binding = 4,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                        .multisampled = false},
-        },
-        {
-            // Normal texture binding
-            .binding = 5,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                        .multisampled = false},
-        },
-        {
-            // Occlusion texture binding
-            .binding = 6,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                        .multisampled = false},
-        },
-        {
-            // Emissive texture binding
-            .binding = 7,
-            .visibility = wgpu::ShaderStage::Fragment,
-            .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                        .viewDimension = wgpu::TextureViewDimension::e2D,
-                        .multisampled = false},
-        },
+    wgpu::BindGroupLayoutEntry modelLayoutEntries[8]{};
 
-    };
+    // 0: Model uniforms
+    modelLayoutEntries[0].binding = 0;
+    modelLayoutEntries[0].visibility = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+    modelLayoutEntries[0].buffer.type = wgpu::BufferBindingType::Uniform;
+    modelLayoutEntries[0].buffer.hasDynamicOffset = false;
+    modelLayoutEntries[0].buffer.minBindingSize = sizeof(ModelUniforms);
 
-    wgpu::BindGroupLayoutDescriptor modelBindGroupLayoutDescriptor{
-        .entryCount = 8,
-        .entries = modelLayoutEntries,
-    };
+    // 1: Material uniforms
+    modelLayoutEntries[1].binding = 1;
+    modelLayoutEntries[1].visibility = wgpu::ShaderStage::Fragment;
+    modelLayoutEntries[1].buffer.type = wgpu::BufferBindingType::Uniform;
+    modelLayoutEntries[1].buffer.hasDynamicOffset = false;
+    modelLayoutEntries[1].buffer.minBindingSize = sizeof(MaterialUniforms);
+
+    // 2: Sampler binding
+    modelLayoutEntries[2].binding = 2;
+    modelLayoutEntries[2].visibility = wgpu::ShaderStage::Fragment;
+    modelLayoutEntries[2].sampler.type = wgpu::SamplerBindingType::Filtering;
+
+    // 3..7 textures
+    for (int t = 0; t < 5; ++t)
+    {
+        const uint32_t binding = 3 + t;
+        modelLayoutEntries[binding].binding = binding;
+        modelLayoutEntries[binding].visibility = wgpu::ShaderStage::Fragment;
+        modelLayoutEntries[binding].texture.sampleType = wgpu::TextureSampleType::Float;
+        modelLayoutEntries[binding].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+        modelLayoutEntries[binding].texture.multisampled = false;
+    }
+
+    wgpu::BindGroupLayoutDescriptor modelBindGroupLayoutDescriptor{};
+    modelBindGroupLayoutDescriptor.entryCount = 8;
+    modelBindGroupLayoutDescriptor.entries = modelLayoutEntries;
 
     m_modelBindGroupLayout = m_device.CreateBindGroupLayout(&modelBindGroupLayoutDescriptor);
 }
@@ -588,11 +549,11 @@ void Renderer::CreateUniformBuffers()
     m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
 }
 
-void Renderer::CreateEnvironmentTexturesAndSamplers()
+void Renderer::CreateEnvironmentTexturesAndSamplers(const Environment &environment)
 {
     MipmapGenerator mipmapGenerator(m_device);
 
-    const Environment::Texture &panoramaTexture = m_environment->GetTexture();
+    const Environment::Texture &panoramaTexture = environment.GetTexture();
     uint32_t environmentCubeSize = FloorPow2(panoramaTexture.m_width);
 
     // Create IBL textures
@@ -704,7 +665,7 @@ void Renderer::CreateMaterials(const Model &model)
             dstMat.m_uniforms.alphaMode = int(srcMat.m_alphaMode);
 
             m_device.GetQueue().WriteBuffer(dstMat.m_uniformBuffer, 0, &dstMat.m_uniforms, sizeof(MaterialUniforms));
-            
+
             glm::vec4 defaultBaseColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
             glm::vec4 defaultMetallicRoughness = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
             glm::vec4 defaultNormal = glm::vec4(0.5f, 0.5f, 1.0f, 1.0f);
@@ -736,48 +697,39 @@ void Renderer::CreateMaterials(const Model &model)
                           dstMat.m_emissiveTextureView);
 
             // Create bind group
-            wgpu::BindGroupEntry bindGroupEntries[8] = {{
-                                                            .binding = 0,
-                                                            .buffer = m_modelUniformBuffer,
-                                                            .offset = 0,
-                                                            .size = sizeof(ModelUniforms),
-                                                        },
-                                                        {
-                                                            .binding = 1,
-                                                            .buffer = dstMat.m_uniformBuffer,
-                                                            .offset = 0,
-                                                            .size = sizeof(MaterialUniforms),
-                                                        },
-                                                        {
-                                                            .binding = 2,
-                                                            .sampler = m_sampler,
-                                                        },
-                                                        {
-                                                            .binding = 3,
-                                                            .textureView = dstMat.m_baseColorTextureView,
-                                                        },
-                                                        {
-                                                            .binding = 4,
-                                                            .textureView = dstMat.m_metallicRoughnessTextureView,
-                                                        },
-                                                        {
-                                                            .binding = 5,
-                                                            .textureView = dstMat.m_normalTextureView,
-                                                        },
-                                                        {
-                                                            .binding = 6,
-                                                            .textureView = dstMat.m_occlusionTextureView,
-                                                        },
-                                                        {
-                                                            .binding = 7,
-                                                            .textureView = dstMat.m_emissiveTextureView,
-                                                        }};
+            wgpu::BindGroupEntry bindGroupEntries[8]{};
+            bindGroupEntries[0].binding = 0;
+            bindGroupEntries[0].buffer = m_modelUniformBuffer;
+            bindGroupEntries[0].offset = 0;
+            bindGroupEntries[0].size = sizeof(ModelUniforms);
 
-            wgpu::BindGroupDescriptor bindGroupDescriptor{
-                .layout = m_modelBindGroupLayout,
-                .entryCount = 8,
-                .entries = bindGroupEntries,
-            };
+            bindGroupEntries[1].binding = 1;
+            bindGroupEntries[1].buffer = dstMat.m_uniformBuffer;
+            bindGroupEntries[1].offset = 0;
+            bindGroupEntries[1].size = sizeof(MaterialUniforms);
+
+            bindGroupEntries[2].binding = 2;
+            bindGroupEntries[2].sampler = m_sampler;
+
+            bindGroupEntries[3].binding = 3;
+            bindGroupEntries[3].textureView = dstMat.m_baseColorTextureView;
+
+            bindGroupEntries[4].binding = 4;
+            bindGroupEntries[4].textureView = dstMat.m_metallicRoughnessTextureView;
+
+            bindGroupEntries[5].binding = 5;
+            bindGroupEntries[5].textureView = dstMat.m_normalTextureView;
+
+            bindGroupEntries[6].binding = 6;
+            bindGroupEntries[6].textureView = dstMat.m_occlusionTextureView;
+
+            bindGroupEntries[7].binding = 7;
+            bindGroupEntries[7].textureView = dstMat.m_emissiveTextureView;
+
+            wgpu::BindGroupDescriptor bindGroupDescriptor{};
+            bindGroupDescriptor.layout = m_modelBindGroupLayout;
+            bindGroupDescriptor.entryCount = 8;
+            bindGroupDescriptor.entries = bindGroupEntries;
 
             dstMat.m_bindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
         }
@@ -786,44 +738,34 @@ void Renderer::CreateMaterials(const Model &model)
 
 void Renderer::CreateGlobalBindGroup()
 {
-    wgpu::BindGroupEntry bindGroupEntries[] = {
-        {
-            .binding = 0,
-            .buffer = m_globalUniformBuffer,
-            .offset = 0,
-            .size = sizeof(GlobalUniforms),
-        },
-        {
-            .binding = 1,
-            .sampler = m_environmentCubeSampler,
-        },
-        {
-            .binding = 2,
-            .textureView = m_environmentTextureView,
-        },
-        {
-            .binding = 3,
-            .textureView = m_iblIrradianceTextureView,
-        },
-        {
-            .binding = 4,
-            .textureView = m_iblSpecularTextureView,
-        },
-        {
-            .binding = 5,
-            .textureView = m_iblBrdfIntegrationLUTView,
-        },
-        {
-            .binding = 6,
-            .sampler = m_iblBrdfIntegrationLUTSampler,
-        },
-    };
+    wgpu::BindGroupEntry bindGroupEntries[7]{};
+    bindGroupEntries[0].binding = 0;
+    bindGroupEntries[0].buffer = m_globalUniformBuffer;
+    bindGroupEntries[0].offset = 0;
+    bindGroupEntries[0].size = sizeof(GlobalUniforms);
 
-    wgpu::BindGroupDescriptor bindGroupDescriptor{
-        .layout = m_globalBindGroupLayout,
-        .entryCount = 7,
-        .entries = bindGroupEntries,
-    };
+    bindGroupEntries[1].binding = 1;
+    bindGroupEntries[1].sampler = m_environmentCubeSampler;
+
+    bindGroupEntries[2].binding = 2;
+    bindGroupEntries[2].textureView = m_environmentTextureView;
+
+    bindGroupEntries[3].binding = 3;
+    bindGroupEntries[3].textureView = m_iblIrradianceTextureView;
+
+    bindGroupEntries[4].binding = 4;
+    bindGroupEntries[4].textureView = m_iblSpecularTextureView;
+
+    bindGroupEntries[5].binding = 5;
+    bindGroupEntries[5].textureView = m_iblBrdfIntegrationLUTView;
+
+    bindGroupEntries[6].binding = 6;
+    bindGroupEntries[6].sampler = m_iblBrdfIntegrationLUTSampler;
+
+    wgpu::BindGroupDescriptor bindGroupDescriptor{};
+    bindGroupDescriptor.layout = m_globalBindGroupLayout;
+    bindGroupDescriptor.entryCount = 7;
+    bindGroupDescriptor.entries = bindGroupEntries;
 
     m_globalBindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
 }
@@ -834,7 +776,8 @@ void Renderer::CreateModelRenderPipelines()
     const std::string shader = LoadShaderFile("./assets/shaders/gltf_pbr.wgsl");
     wgslDesc.code = shader.c_str();
 
-    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgslDesc};
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
+    shaderModuleDescriptor.nextInChain = &wgslDesc;
     m_modelShaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::VertexAttribute vertexAttributes[] = {
@@ -846,58 +789,55 @@ void Renderer::CreateModelRenderPipelines()
         {.format = wgpu::VertexFormat::Float32x4, .offset = offsetof(Model::Vertex, m_color), .shaderLocation = 5},
     };
 
-    wgpu::VertexBufferLayout vertexBufferLayout{
-        .arrayStride = sizeof(Model::Vertex),
-        .stepMode = wgpu::VertexStepMode::Vertex,
-        .attributeCount = 6,
-        .attributes = vertexAttributes,
-    };
+    wgpu::VertexBufferLayout vertexBufferLayout{};
+    vertexBufferLayout.arrayStride = sizeof(Model::Vertex);
+    vertexBufferLayout.stepMode = wgpu::VertexStepMode::Vertex;
+    vertexBufferLayout.attributeCount = 6;
+    vertexBufferLayout.attributes = vertexAttributes;
 
-    wgpu::ColorTargetState colorTargetState{.format = m_surfaceFormat};
+    wgpu::ColorTargetState colorTargetState{};
+    colorTargetState.format = m_surfaceFormat;
 
-    wgpu::FragmentState fragmentState{
-        .module = m_modelShaderModule, .entryPoint = "fragmentMain", .targetCount = 1, .targets = &colorTargetState};
+    wgpu::FragmentState fragmentState{};
+    fragmentState.module = m_modelShaderModule;
+    fragmentState.entryPoint = "fragmentMain";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTargetState;
 
-    wgpu::DepthStencilState depthStencilState{
-        .format = wgpu::TextureFormat::Depth24PlusStencil8,
-        .depthWriteEnabled = true,
-        .depthCompare = wgpu::CompareFunction::Less,
-    };
+    wgpu::DepthStencilState depthStencilState{};
+    depthStencilState.format = wgpu::TextureFormat::Depth24PlusStencil8;
+    depthStencilState.depthWriteEnabled = true;
+    depthStencilState.depthCompare = wgpu::CompareFunction::Less;
 
     wgpu::BindGroupLayout bindGroupLayouts[] = {m_globalBindGroupLayout, m_modelBindGroupLayout};
 
-    wgpu::PipelineLayoutDescriptor layoutDescriptor{
-        .bindGroupLayoutCount = 2,
-        .bindGroupLayouts = bindGroupLayouts,
-    };
+    wgpu::PipelineLayoutDescriptor layoutDescriptor{};
+    layoutDescriptor.bindGroupLayoutCount = 2;
+    layoutDescriptor.bindGroupLayouts = bindGroupLayouts;
 
     wgpu::PipelineLayout pipelineLayout = m_device.CreatePipelineLayout(&layoutDescriptor);
 
-    wgpu::RenderPipelineDescriptor descriptor{.layout = pipelineLayout,
-                                              .vertex =
-                                                  {
-                                                      .module = m_modelShaderModule,
-                                                      .entryPoint = "vertexMain",
-                                                      .bufferCount = 1,
-                                                      .buffers = &vertexBufferLayout,
-                                                  },
-                                              .primitive = {.topology = wgpu::PrimitiveTopology::TriangleList},
-                                              .depthStencil = &depthStencilState,
-                                              .fragment = &fragmentState};
+    wgpu::RenderPipelineDescriptor descriptor{};
+    descriptor.layout = pipelineLayout;
+    descriptor.vertex.module = m_modelShaderModule;
+    descriptor.vertex.entryPoint = "vertexMain";
+    descriptor.vertex.bufferCount = 1;
+    descriptor.vertex.buffers = &vertexBufferLayout;
+    descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+    descriptor.depthStencil = &depthStencilState;
+    descriptor.fragment = &fragmentState;
 
     m_modelPipelineOpaque = m_device.CreateRenderPipeline(&descriptor);
 
     // Set up pipeline for transparent objects
-    wgpu::BlendComponent blendComponent = {
-        .operation = wgpu::BlendOperation::Add,
-        .srcFactor = wgpu::BlendFactor::SrcAlpha,
-        .dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha,
-    };
+    wgpu::BlendComponent blendComponent{};
+    blendComponent.operation = wgpu::BlendOperation::Add;
+    blendComponent.srcFactor = wgpu::BlendFactor::SrcAlpha;
+    blendComponent.dstFactor = wgpu::BlendFactor::OneMinusSrcAlpha;
 
-    wgpu::BlendState blendState = {
-        .color = blendComponent,
-        .alpha = blendComponent,
-    };
+    wgpu::BlendState blendState{};
+    blendState.color = blendComponent;
+    blendState.alpha = blendComponent;
 
     colorTargetState.blend = &blendState;
     depthStencilState.depthWriteEnabled = false; // Disable depth writes for transparent objects
@@ -907,63 +847,64 @@ void Renderer::CreateModelRenderPipelines()
 
 void Renderer::CreateEnvironmentRenderPipeline()
 {
-    wgpu::ColorTargetState colorTargetState{.format = m_surfaceFormat};
+    wgpu::ColorTargetState colorTargetState{};
+    colorTargetState.format = m_surfaceFormat;
 
-    wgpu::FragmentState fragmentState{
-        .module = m_modelShaderModule, .entryPoint = "fragmentMain", .targetCount = 1, .targets = &colorTargetState};
+    wgpu::FragmentState fragmentState{};
+    fragmentState.module = m_modelShaderModule;
+    fragmentState.entryPoint = "fragmentMain";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTargetState;
 
-    wgpu::DepthStencilState depthStencilState{
-        .format = wgpu::TextureFormat::Depth24PlusStencil8,
-        .depthWriteEnabled = true,
-        .depthCompare = wgpu::CompareFunction::Less,
-    };
+    wgpu::DepthStencilState depthStencilState{};
+    depthStencilState.format = wgpu::TextureFormat::Depth24PlusStencil8;
+    depthStencilState.depthWriteEnabled = true;
+    depthStencilState.depthCompare = wgpu::CompareFunction::Less;
 
     // Create an environment pipeline
     wgpu::ShaderModuleWGSLDescriptor environmentWgslDesc{};
     const std::string environmentShader = LoadShaderFile("./assets/shaders/environment.wgsl");
     environmentWgslDesc.code = environmentShader.c_str();
 
-    wgpu::ShaderModuleDescriptor environmentShaderModuleDescriptor{.nextInChain = &environmentWgslDesc};
+    wgpu::ShaderModuleDescriptor environmentShaderModuleDescriptor{};
+    environmentShaderModuleDescriptor.nextInChain = &environmentWgslDesc;
     m_environmentShaderModule = m_device.CreateShaderModule(&environmentShaderModuleDescriptor);
 
-    wgpu::FragmentState environmentFragmentState{.module = m_environmentShaderModule,
-                                                 .entryPoint = "fragmentMain",
-                                                 .targetCount = 1,
-                                                 .targets = &colorTargetState};
+    wgpu::FragmentState environmentFragmentState{};
+    environmentFragmentState.module = m_environmentShaderModule;
+    environmentFragmentState.entryPoint = "fragmentMain";
+    environmentFragmentState.targetCount = 1;
+    environmentFragmentState.targets = &colorTargetState;
 
     wgpu::BindGroupLayout environmentBindGroupLayouts[] = {m_globalBindGroupLayout};
-    wgpu::PipelineLayoutDescriptor environmentLayoutDescriptor{
-        .bindGroupLayoutCount = 1,
-        .bindGroupLayouts = environmentBindGroupLayouts,
-    };
+    wgpu::PipelineLayoutDescriptor environmentLayoutDescriptor{};
+    environmentLayoutDescriptor.bindGroupLayoutCount = 1;
+    environmentLayoutDescriptor.bindGroupLayouts = environmentBindGroupLayouts;
     wgpu::PipelineLayout environmentPipelineLayout = m_device.CreatePipelineLayout(&environmentLayoutDescriptor);
 
     depthStencilState.depthWriteEnabled = false; // Disable depth writes for the environment
-    wgpu::RenderPipelineDescriptor environmentDescriptor{
-        .layout = environmentPipelineLayout,
-        .vertex =
-            {
-                .module = m_environmentShaderModule,
-                .entryPoint = "vertexMain",
-                .bufferCount = 0,
-                .buffers = nullptr, // Vertices encoded in shader
-            },
-        .primitive = {.topology = wgpu::PrimitiveTopology::TriangleList},
-        .depthStencil = &depthStencilState,
-        .fragment = &environmentFragmentState};
+    wgpu::RenderPipelineDescriptor environmentDescriptor{};
+    environmentDescriptor.layout = environmentPipelineLayout;
+    environmentDescriptor.vertex.module = m_environmentShaderModule;
+    environmentDescriptor.vertex.entryPoint = "vertexMain";
+    environmentDescriptor.vertex.bufferCount = 0;
+    environmentDescriptor.vertex.buffers = nullptr; // Vertices encoded in shader
+    environmentDescriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+    environmentDescriptor.depthStencil = &depthStencilState;
+    environmentDescriptor.fragment = &environmentFragmentState;
 
     m_environmentPipeline = m_device.CreateRenderPipeline(&environmentDescriptor);
 }
 
-void Renderer::UpdateUniforms(const glm::mat4 &modelMatrix) const
+void Renderer::UpdateUniforms(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera) const
 {
     // Update the global uniforms
     GlobalUniforms globalUniforms;
-    globalUniforms.viewMatrix = m_camera->GetViewMatrix();
-    globalUniforms.projectionMatrix = m_camera->GetProjectionMatrix();
+    globalUniforms.viewMatrix = camera.viewMatrix;
+    globalUniforms.projectionMatrix = camera.projectionMatrix;
     globalUniforms.inverseViewMatrix = glm::inverse(globalUniforms.viewMatrix);
     globalUniforms.inverseProjectionMatrix = glm::inverse(globalUniforms.projectionMatrix);
-    globalUniforms.cameraPosition = m_camera->GetWorldPosition();
+    globalUniforms.cameraPosition = camera.cameraPosition;
 
     // Upload the uniforms to the GPU
     m_device.GetQueue().WriteBuffer(m_globalUniformBuffer, 0, &globalUniforms, sizeof(GlobalUniforms));
@@ -985,9 +926,9 @@ void Renderer::UpdateUniforms(const glm::mat4 &modelMatrix) const
     m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
 }
 
-void Renderer::SortTransparentMeshes(const glm::mat4 &modelMatrix)
+void Renderer::SortTransparentMeshes(const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix)
 {
-    glm::mat4 modelView = m_camera->GetViewMatrix() * modelMatrix;
+    glm::mat4 modelView = viewMatrix * modelMatrix;
 
     m_transparentMeshesDepthSorted.clear();
     m_transparentMeshesDepthSorted.reserve(m_transparentMeshes.size());
@@ -1000,26 +941,23 @@ void Renderer::SortTransparentMeshes(const glm::mat4 &modelMatrix)
         float depth = centroid.z;
 
         // Only add meshes in front of the camera
-        if (depth < 0.0f) {
-            SubMeshDepthInfo subMeshDepthInfo = {
-                .m_depth = depth,
-                .m_meshIndex = i
-            };
+        if (depth < 0.0f)
+        {
+            SubMeshDepthInfo subMeshDepthInfo = {.m_depth = depth, .m_meshIndex = i};
             m_transparentMeshesDepthSorted.push_back(subMeshDepthInfo);
         }
     }
 
     // Sort the transparent meshes based on depth (back to front; highest negative Z being furthest away)
     std::sort(m_transparentMeshesDepthSorted.begin(), m_transparentMeshesDepthSorted.end(),
-              [](const SubMeshDepthInfo &a, const SubMeshDepthInfo &b) {
-                  return a.m_depth < b.m_depth;
-              });
+              [](const SubMeshDepthInfo &a, const SubMeshDepthInfo &b) { return a.m_depth < b.m_depth; });
 }
 
 void Renderer::GetAdapter(const std::function<void(wgpu::Adapter)> &callback)
 {
-    wgpu::RequestAdapterOptions options{.compatibleSurface = m_surface,
-                                        .powerPreference = wgpu::PowerPreference::HighPerformance};
+    wgpu::RequestAdapterOptions options{};
+    options.compatibleSurface = m_surface;
+    options.powerPreference = wgpu::PowerPreference::HighPerformance;
 
     m_instance.RequestAdapter(
         &options,
@@ -1097,23 +1035,23 @@ void Renderer::GetDevice(const std::function<void(wgpu::Device)> &callback)
     // Set device lost callback for Dawn/native
     deviceDesc.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
-        [logDeviceLostReason](const wgpu::Device &device, wgpu::DeviceLostReason reason, const char *message) {
-            logDeviceLostReason(reason, message);
-        });
+        [logDeviceLostReason]([[maybe_unused]] const wgpu::Device &device, wgpu::DeviceLostReason reason,
+                              const char *message) { logDeviceLostReason(reason, message); });
 
     // Set uncaptured error callback for Dawn/native
-    deviceDesc.SetUncapturedErrorCallback([](const wgpu::Device &device, wgpu::ErrorType type, const char *message) {
-        std::cerr << "Uncaptured error: ";
-        if (message)
-        {
-            std::cerr << message << std::endl;
-        }
-        else
-        {
-            std::cerr << "No message provided." << std::endl;
-        }
-        std::exit(EXIT_FAILURE); // Exit the application
-    });
+    deviceDesc.SetUncapturedErrorCallback(
+        []([[maybe_unused]] const wgpu::Device &device, [[maybe_unused]] wgpu::ErrorType type, const char *message) {
+            std::cerr << "Uncaptured error: ";
+            if (message)
+            {
+                std::cerr << message << std::endl;
+            }
+            else
+            {
+                std::cerr << "No message provided." << std::endl;
+            }
+            std::exit(EXIT_FAILURE); // Exit the application
+        });
 #endif
 
     m_adapter.RequestDevice(

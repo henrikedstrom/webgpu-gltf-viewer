@@ -11,7 +11,6 @@
 #include <webgpu/webgpu_cpp.h>
 
 // Forward Declarations
-class Camera;
 class Environment;
 class Model;
 struct GLFWwindow;
@@ -20,6 +19,14 @@ struct GLFWwindow;
 class Renderer
 {
   public:
+    // Types used by the public interface
+    struct CameraUniformsInput
+    {
+        glm::mat4 viewMatrix;
+        glm::mat4 projectionMatrix;
+        glm::vec3 cameraPosition;
+    };
+
     // Constructor
     Renderer() = default;
 
@@ -30,31 +37,31 @@ class Renderer
     Renderer &operator=(Renderer &&) = delete;
 
     // Public Interface
-    void Initialize(GLFWwindow *window, Camera *camera, Environment *environment, const Model &model, uint32_t width,
+    void Initialize(GLFWwindow *window, const Environment &environment, const Model &model, uint32_t width,
                     uint32_t height, const std::function<void()> &callback);
     void Resize(uint32_t width, uint32_t height);
-    void Render();
+    void Render(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera);
     void ReloadShaders();
     void UpdateModel(const Model &model);
     void UpdateEnvironment(const Environment &environment);
 
   private:
     // Private utility methods
-    void InitGraphics(const Model &model);
-    void ConfigureSurface();
-    void CreateDepthTexture();
+    void InitGraphics(const Environment &environment, const Model &model, uint32_t width, uint32_t height);
+    void ConfigureSurface(uint32_t width, uint32_t height);
+    void CreateDepthTexture(uint32_t width, uint32_t height);
     void CreateBindGroupLayouts();
     void CreateVertexBuffer(const Model &model);
     void CreateIndexBuffer(const Model &model);
     void CreateUniformBuffers();
-    void CreateEnvironmentTexturesAndSamplers();
+    void CreateEnvironmentTexturesAndSamplers(const Environment &environment);
     void CreateSubMeshes(const Model &model);
     void CreateMaterials(const Model &model);
     void CreateGlobalBindGroup();
     void CreateEnvironmentRenderPipeline();
     void CreateModelRenderPipelines();
-    void UpdateUniforms(const glm::mat4 &modelMatrix) const;
-    void SortTransparentMeshes(const glm::mat4 &modelMatrix);
+    void UpdateUniforms(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera) const;
+    void SortTransparentMeshes(const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix);
     void GetAdapter(const std::function<void(wgpu::Adapter)> &callback);
     void GetDevice(const std::function<void(wgpu::Device)> &callback);
     std::string LoadShaderFile(const std::string &filepath) const;
@@ -67,7 +74,7 @@ class Renderer
         alignas(16) glm::mat4 inverseViewMatrix;
         alignas(16) glm::mat4 inverseProjectionMatrix;
         alignas(16) glm::vec3 cameraPosition;
-        alignas(16) float padding[1];
+        float _pad;
     };
 
     struct ModelUniforms
@@ -116,14 +123,6 @@ class Renderer
       float m_depth = 0.0f;
       uint32_t m_meshIndex = 0;
     };
-
-    // Private member variables
-    GLFWwindow *m_window = nullptr;
-    uint32_t m_width = 0;
-    uint32_t m_height = 0;
-    Camera *m_camera = nullptr;
-    Environment *m_environment = nullptr;
-    const Model *m_model = nullptr;
 
     // WebGPU variables
     wgpu::Instance m_instance;

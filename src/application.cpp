@@ -1,6 +1,7 @@
 // Standard Library Headers
 #include <algorithm>
 #include <iostream>
+#include <cctype>
 
 // Third-Party Library Headers
 #include <GLFW/glfw3.h>
@@ -71,7 +72,7 @@ void EmscriptenSetDropCallback()
                 return;
             }
         
-            console.log(`Dropped file: ${file.name} (Size: ${file.size} bytes)`);
+        console.log("Dropped file: " + file.name + " (Size: " + file.size + " bytes)");
         
             let reader = new FileReader();
             reader.onload = function (e) {
@@ -93,7 +94,7 @@ void EmscriptenSetDropCallback()
                 }
                 Module.stringToUTF8(file.name, filenamePtr, nameLength);
         
-                console.log(`Sending file '${file.name}' (Size: ${data.length} bytes) to C++`);
+                console.log("Sending file '" + file.name + "' (Size: " + data.length + " bytes) to C++");
                 Module.ccall(
                     "wasm_OnDropFile",
                     "void",
@@ -117,14 +118,13 @@ void EmscriptenSetDropCallback()
 namespace
 {
 
-void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+void KeyCallback([[maybe_unused]] GLFWwindow *window, int key, [[maybe_unused]] int scancode, int action, int mods)
 {
     static bool keyState[GLFW_KEY_LAST] = {false};
 
     if (key >= 0 && key < GLFW_KEY_LAST)
     {
         bool keyPressed = action == GLFW_PRESS && !keyState[key];
-        bool keyReleased = action == GLFW_RELEASE && keyState[key];
 
         if (action == GLFW_PRESS)
         {
@@ -191,7 +191,7 @@ void Application::Run()
     // Setup input callbacks
     m_controls = std::make_unique<OrbitControls>(m_window, &m_camera);
     glfwSetKeyCallback(m_window, KeyCallback);
-    glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow *window, int width, int height) {
+    glfwSetFramebufferSizeCallback(m_window, []([[maybe_unused]] GLFWwindow *window, int width, int height) {
         Application::GetInstance()->OnResize(width, height);
     });
 
@@ -200,7 +200,7 @@ void Application::Run()
 #ifdef __EMSCRIPTEN__
     EmscriptenSetDropCallback();
 #else
-    glfwSetDropCallback(m_window, [](GLFWwindow *window, int count, const char **paths) {
+    glfwSetDropCallback(m_window, []([[maybe_unused]] GLFWwindow *window, int count, const char **paths) {
         if (count > 0) {
             Application::GetInstance()->OnFileDropped(paths[0]);
         }
@@ -213,7 +213,7 @@ void Application::Run()
 
     RepositionCamera(m_camera, m_model);
 
-    m_renderer.Initialize(m_window, &m_camera, &m_environment, m_model, m_width, m_height, [this]() { MainLoop(); });
+    m_renderer.Initialize(m_window, m_environment, m_model, m_width, m_height, [this]() { MainLoop(); });
 }
 
 void Application::MainLoop()
@@ -237,7 +237,12 @@ void Application::ProcessFrame()
     m_model.Update(0.01f, m_animateModel);
 
     // Render a frame
-    m_renderer.Render();
+    Renderer::CameraUniformsInput cameraInput{
+        .viewMatrix = m_camera.GetViewMatrix(),
+        .projectionMatrix = m_camera.GetProjectionMatrix(),
+        .cameraPosition = m_camera.GetWorldPosition(),
+    };
+    m_renderer.Render(m_model.GetTransform(), cameraInput);
 }
 
 void Application::OnKeyPressed(int key, int mods)
@@ -280,7 +285,8 @@ void Application::OnResize(int width, int height)
 void Application::OnFileDropped(const std::string &filename, uint8_t *data, int length)
 {
     std::string extension = filename.substr(filename.find_last_of(".") + 1);
-    std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     if (extension == "glb" || extension == "gltf")
     {

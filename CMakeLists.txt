@@ -48,6 +48,20 @@ set(HEADER_FILES
 # Add executable
 add_executable(app ${SOURCE_FILES} ${HEADER_FILES})
 
+# Compiler warnings
+if(MSVC)
+  target_compile_options(app PRIVATE /W4 /WX)
+else()
+  target_compile_options(app PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+
+# Per-file warning overrides (third-party)
+if(MSVC)
+  set_source_files_properties(src/mikktspace.c PROPERTIES COMPILE_OPTIONS "/W0")
+else()
+  set_source_files_properties(src/mikktspace.c PROPERTIES COMPILE_OPTIONS "-w")
+endif()
+
 # Organize files in IDEs (e.g., Visual Studio, Xcode)
 source_group("Source Files" FILES ${SOURCE_FILES})
 source_group("Header Files" FILES ${HEADER_FILES})
@@ -58,6 +72,13 @@ target_include_directories(app PRIVATE
   third_party/tiny_gltf
   third_party/glm          # Include GLM
   src                      # Include src for project headers (e.g., camera.h)
+)
+
+# Treat third-party headers as system headers to silence warnings from them
+target_include_directories(app SYSTEM PRIVATE
+  third_party/stb_image
+  third_party/tiny_gltf
+  third_party/glm
 )
 
 # Link GLM to the target

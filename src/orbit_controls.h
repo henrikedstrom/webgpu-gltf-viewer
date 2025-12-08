@@ -30,8 +30,7 @@ class OrbitControls
     static constexpr float kZoomSensitivity = 30.0f;
 
     // Private Member Variables
-    GLFWwindow *m_window; // Non-owning pointer
-    Camera *m_camera;     // Non-owning pointer
+    Camera *m_camera; // Non-owning pointer
     bool m_mouseTumble{false};
     bool m_mousePan{false};
     glm::vec2 m_mouseLastPos{0};

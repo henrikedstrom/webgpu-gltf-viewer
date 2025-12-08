@@ -48,42 +48,50 @@ void EnvironmentPreprocessor::GenerateMaps(const wgpu::Texture &environmentCubem
                                            wgpu::Texture &prefilteredSpecularCubemap, wgpu::Texture &brdfIntegrationLUT)
 {
     // Create views for the input cubemap and output cubemap.
-    wgpu::TextureViewDescriptor inputViewDesc{
-        .format = wgpu::TextureFormat::RGBA16Float,
-        .dimension = wgpu::TextureViewDimension::Cube,
-        .baseArrayLayer = 0,
-        .arrayLayerCount = 6,
-    };
-    wgpu::TextureViewDescriptor outputCubeViewDesc{
-        .format = wgpu::TextureFormat::RGBA16Float,
-        .dimension = wgpu::TextureViewDimension::e2DArray,
-        .baseMipLevel = 0,
-        .mipLevelCount = 1,
-        .baseArrayLayer = 0,
-        .arrayLayerCount = 6,
-    };
-    wgpu::TextureViewDescriptor output2DViewDesc{
-        .format = wgpu::TextureFormat::RGBA16Float,
-        .dimension = wgpu::TextureViewDimension::e2D,
-        .baseMipLevel = 0,
-        .mipLevelCount = 1,
-        .baseArrayLayer = 0,
-        .arrayLayerCount = 1,
-    };
+    wgpu::TextureViewDescriptor inputViewDesc{};
+    inputViewDesc.format = wgpu::TextureFormat::RGBA16Float;
+    inputViewDesc.dimension = wgpu::TextureViewDimension::Cube;
+    inputViewDesc.baseArrayLayer = 0;
+    inputViewDesc.arrayLayerCount = 6;
+
+    wgpu::TextureViewDescriptor outputCubeViewDesc{};
+    outputCubeViewDesc.format = wgpu::TextureFormat::RGBA16Float;
+    outputCubeViewDesc.dimension = wgpu::TextureViewDimension::e2DArray;
+    outputCubeViewDesc.baseMipLevel = 0;
+    outputCubeViewDesc.mipLevelCount = 1;
+    outputCubeViewDesc.baseArrayLayer = 0;
+    outputCubeViewDesc.arrayLayerCount = 6;
+
+    wgpu::TextureViewDescriptor output2DViewDesc{};
+    output2DViewDesc.format = wgpu::TextureFormat::RGBA16Float;
+    output2DViewDesc.dimension = wgpu::TextureViewDimension::e2D;
+    output2DViewDesc.baseMipLevel = 0;
+    output2DViewDesc.mipLevelCount = 1;
+    output2DViewDesc.baseArrayLayer = 0;
+    output2DViewDesc.arrayLayerCount = 1;
 
     // Bind group 0 (common for all passes)
-    wgpu::BindGroupEntry bindGroup0Entries[] = {
-        {.binding = 0, .sampler = m_environmentSampler},
-        {.binding = 1, .textureView = environmentCubemap.CreateView(&inputViewDesc)},
-        {.binding = 2, .buffer = m_uniformBuffer},
-        {.binding = 3, .textureView = irradianceCubemap.CreateView(&outputCubeViewDesc)},
-        {.binding = 4, .textureView = brdfIntegrationLUT.CreateView(&output2DViewDesc)},
-    };
-    wgpu::BindGroupDescriptor bindGroup0Descriptor{
-        .layout = m_bindGroupLayouts[0],
-        .entryCount = 5,
-        .entries = bindGroup0Entries,
-    };
+    wgpu::BindGroupEntry bindGroup0Entries[5]{};
+
+    bindGroup0Entries[0].binding = 0;
+    bindGroup0Entries[0].sampler = m_environmentSampler;
+
+    bindGroup0Entries[1].binding = 1;
+    bindGroup0Entries[1].textureView = environmentCubemap.CreateView(&inputViewDesc);
+
+    bindGroup0Entries[2].binding = 2;
+    bindGroup0Entries[2].buffer = m_uniformBuffer;
+
+    bindGroup0Entries[3].binding = 3;
+    bindGroup0Entries[3].textureView = irradianceCubemap.CreateView(&outputCubeViewDesc);
+
+    bindGroup0Entries[4].binding = 4;
+    bindGroup0Entries[4].textureView = brdfIntegrationLUT.CreateView(&output2DViewDesc);
+
+    wgpu::BindGroupDescriptor bindGroup0Descriptor{};
+    bindGroup0Descriptor.layout = m_bindGroupLayouts[0];
+    bindGroup0Descriptor.entryCount = 5;
+    bindGroup0Descriptor.entries = bindGroup0Entries;
     wgpu::BindGroup bindGroup0 = m_device.CreateBindGroup(&bindGroup0Descriptor);
 
     // Bind group 2 (per-mip)
@@ -167,10 +175,9 @@ void EnvironmentPreprocessor::GenerateMaps(const wgpu::Texture &environmentCubem
 void EnvironmentPreprocessor::initUniformBuffers()
 {
     // Create a buffer for the prefilter parameters
-    wgpu::BufferDescriptor bufferDescriptor{
-        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-        .size = sizeof(uint32_t),
-    };
+    wgpu::BufferDescriptor bufferDescriptor{};
+    bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    bufferDescriptor.size = sizeof(uint32_t);
 
     m_uniformBuffer = m_device.CreateBuffer(&bufferDescriptor);
     uint32_t numSamples = 1024; // FIXME: Hardcoded number of samples
@@ -202,82 +209,74 @@ void EnvironmentPreprocessor::initSampler()
 
 void EnvironmentPreprocessor::initBindGroupLayouts()
 {
-    wgpu::BindGroupLayoutEntry samplerEntry{
-        .binding = 0,
-        .visibility = wgpu::ShaderStage::Compute,
-        .sampler = {.type = wgpu::SamplerBindingType::Filtering},
-    };
+    wgpu::BindGroupLayoutEntry samplerEntry{};
+    samplerEntry.binding = 0;
+    samplerEntry.visibility = wgpu::ShaderStage::Compute;
+    samplerEntry.sampler.type = wgpu::SamplerBindingType::Filtering;
 
-    wgpu::BindGroupLayoutEntry cubemapEntry{
-        .binding = 1,
-        .visibility = wgpu::ShaderStage::Compute,
-        .texture = {.sampleType = wgpu::TextureSampleType::Float,
-                    .viewDimension = wgpu::TextureViewDimension::Cube,
-                    .multisampled = false},
-    };
+    wgpu::BindGroupLayoutEntry cubemapEntry{};
+    cubemapEntry.binding = 1;
+    cubemapEntry.visibility = wgpu::ShaderStage::Compute;
+    cubemapEntry.texture.sampleType = wgpu::TextureSampleType::Float;
+    cubemapEntry.texture.viewDimension = wgpu::TextureViewDimension::Cube;
+    cubemapEntry.texture.multisampled = false;
 
-    wgpu::BindGroupLayoutEntry numSamplesEntry{
-        .binding = 2,
-        .visibility = wgpu::ShaderStage::Compute,
-        .buffer = {.type = wgpu::BufferBindingType::Uniform, .minBindingSize = sizeof(uint32_t)},
-    };
+    wgpu::BindGroupLayoutEntry numSamplesEntry{};
+    numSamplesEntry.binding = 2;
+    numSamplesEntry.visibility = wgpu::ShaderStage::Compute;
+    numSamplesEntry.buffer.type = wgpu::BufferBindingType::Uniform;
+    numSamplesEntry.buffer.minBindingSize = sizeof(uint32_t);
 
-    wgpu::BindGroupLayoutEntry irradinaceEntry{
-        .binding = 3,
-        .visibility = wgpu::ShaderStage::Compute,
-        .storageTexture = {.access = wgpu::StorageTextureAccess::WriteOnly,
-                           .format = wgpu::TextureFormat::RGBA16Float,
-                           .viewDimension = wgpu::TextureViewDimension::e2DArray},
-    };
+    wgpu::BindGroupLayoutEntry irradinaceEntry{};
+    irradinaceEntry.binding = 3;
+    irradinaceEntry.visibility = wgpu::ShaderStage::Compute;
+    irradinaceEntry.storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
+    irradinaceEntry.storageTexture.format = wgpu::TextureFormat::RGBA16Float;
+    irradinaceEntry.storageTexture.viewDimension = wgpu::TextureViewDimension::e2DArray;
 
-    wgpu::BindGroupLayoutEntry brdfLutEntry{
-        .binding = 4,
-        .visibility = wgpu::ShaderStage::Compute,
-        .storageTexture = {.access = wgpu::StorageTextureAccess::WriteOnly,
-                           .format = wgpu::TextureFormat::RGBA16Float,
-                           .viewDimension = wgpu::TextureViewDimension::e2D},
-    };
+    wgpu::BindGroupLayoutEntry brdfLutEntry{};
+    brdfLutEntry.binding = 4;
+    brdfLutEntry.visibility = wgpu::ShaderStage::Compute;
+    brdfLutEntry.storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
+    brdfLutEntry.storageTexture.format = wgpu::TextureFormat::RGBA16Float;
+    brdfLutEntry.storageTexture.viewDimension = wgpu::TextureViewDimension::e2D;
 
     wgpu::BindGroupLayoutEntry group0Entries[] = {samplerEntry, cubemapEntry, numSamplesEntry, irradinaceEntry,
                                                   brdfLutEntry};
-    wgpu::BindGroupLayoutDescriptor group0LayoutDesc{
-        .entryCount = 5,
-        .entries = group0Entries,
-    };
+    wgpu::BindGroupLayoutDescriptor group0LayoutDesc{};
+    group0LayoutDesc.entryCount = 5;
+    group0LayoutDesc.entries = group0Entries;
     m_bindGroupLayouts[0] = m_device.CreateBindGroupLayout(&group0LayoutDesc);
 
-    wgpu::BindGroupLayoutEntry faceIndexEntry{
-        .binding = 0,
-        .visibility = wgpu::ShaderStage::Compute,
-        .buffer = {.type = wgpu::BufferBindingType::Uniform, .minBindingSize = sizeof(uint32_t)},
-    };
+    wgpu::BindGroupLayoutEntry faceIndexEntry{};
+    faceIndexEntry.binding = 0;
+    faceIndexEntry.visibility = wgpu::ShaderStage::Compute;
+    faceIndexEntry.buffer.type = wgpu::BufferBindingType::Uniform;
+    faceIndexEntry.buffer.minBindingSize = sizeof(uint32_t);
 
     wgpu::BindGroupLayoutEntry group1Entries[] = {faceIndexEntry};
-    wgpu::BindGroupLayoutDescriptor group1LayoutDesc{
-        .entryCount = 1,
-        .entries = group1Entries,
-    };
+    wgpu::BindGroupLayoutDescriptor group1LayoutDesc{};
+    group1LayoutDesc.entryCount = 1;
+    group1LayoutDesc.entries = group1Entries;
     m_bindGroupLayouts[1] = m_device.CreateBindGroupLayout(&group1LayoutDesc);
 
-    wgpu::BindGroupLayoutEntry roughnessParamsEntry{
-        .binding = 0,
-        .visibility = wgpu::ShaderStage::Compute,
-        .buffer = {.type = wgpu::BufferBindingType::Uniform, .minBindingSize = sizeof(float)},
-    };
+    wgpu::BindGroupLayoutEntry roughnessParamsEntry{};
+    roughnessParamsEntry.binding = 0;
+    roughnessParamsEntry.visibility = wgpu::ShaderStage::Compute;
+    roughnessParamsEntry.buffer.type = wgpu::BufferBindingType::Uniform;
+    roughnessParamsEntry.buffer.minBindingSize = sizeof(float);
 
-    wgpu::BindGroupLayoutEntry prefilteredSpecularEntry{
-        .binding = 1,
-        .visibility = wgpu::ShaderStage::Compute,
-        .storageTexture = {.access = wgpu::StorageTextureAccess::WriteOnly,
-                           .format = wgpu::TextureFormat::RGBA16Float,
-                           .viewDimension = wgpu::TextureViewDimension::e2DArray},
-    };
+    wgpu::BindGroupLayoutEntry prefilteredSpecularEntry{};
+    prefilteredSpecularEntry.binding = 1;
+    prefilteredSpecularEntry.visibility = wgpu::ShaderStage::Compute;
+    prefilteredSpecularEntry.storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
+    prefilteredSpecularEntry.storageTexture.format = wgpu::TextureFormat::RGBA16Float;
+    prefilteredSpecularEntry.storageTexture.viewDimension = wgpu::TextureViewDimension::e2DArray;
 
     wgpu::BindGroupLayoutEntry group2Entries[] = {roughnessParamsEntry, prefilteredSpecularEntry};
-    wgpu::BindGroupLayoutDescriptor group2LayoutDesc{
-        .entryCount = 2,
-        .entries = group2Entries,
-    };
+    wgpu::BindGroupLayoutDescriptor group2LayoutDesc{};
+    group2LayoutDesc.entryCount = 2;
+    group2LayoutDesc.entries = group2Entries;
     m_bindGroupLayouts[2] = m_device.CreateBindGroupLayout(&group2LayoutDesc);
 }
 
@@ -286,14 +285,14 @@ void EnvironmentPreprocessor::initBindGroups()
     // Create bind groups for per-face uniform buffers
     for (uint32_t face = 0; face < 6; ++face)
     {
-        wgpu::BindGroupEntry bindGroupEntries[] = {
-            {.binding = 0, .buffer = m_perFaceUniformBuffers[face]},
-        };
-        wgpu::BindGroupDescriptor bindGroupDescriptor{
-            .layout = m_bindGroupLayouts[1],
-            .entryCount = 1,
-            .entries = bindGroupEntries,
-        };
+        wgpu::BindGroupEntry bindGroupEntries[1]{};
+        bindGroupEntries[0].binding = 0;
+        bindGroupEntries[0].buffer = m_perFaceUniformBuffers[face];
+
+        wgpu::BindGroupDescriptor bindGroupDescriptor{};
+        bindGroupDescriptor.layout = m_bindGroupLayouts[1];
+        bindGroupDescriptor.entryCount = 1;
+        bindGroupDescriptor.entries = bindGroupEntries;
         m_perFaceBindGroups[face] = m_device.CreateBindGroup(&bindGroupDescriptor);
     }
 }
@@ -305,7 +304,8 @@ void EnvironmentPreprocessor::initComputePipelines()
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
     wgslDesc.code = shaderCode.c_str();
 
-    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgslDesc};
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
+    shaderModuleDescriptor.nextInChain = &wgslDesc;
     wgpu::ShaderModule computeShaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::BindGroupLayout pipelineBindGroups[] = {
@@ -313,20 +313,15 @@ void EnvironmentPreprocessor::initComputePipelines()
         m_bindGroupLayouts[1],
         m_bindGroupLayouts[2],
     };
-    wgpu::PipelineLayoutDescriptor layoutDescriptor{
-        .bindGroupLayoutCount = 3,
-        .bindGroupLayouts = pipelineBindGroups,
-    };
+    wgpu::PipelineLayoutDescriptor layoutDescriptor{};
+    layoutDescriptor.bindGroupLayoutCount = 3;
+    layoutDescriptor.bindGroupLayouts = pipelineBindGroups;
 
     wgpu::PipelineLayout pipelineLayout = m_device.CreatePipelineLayout(&layoutDescriptor);
 
-    wgpu::ComputePipelineDescriptor descriptor{
-        .layout = pipelineLayout,
-        .compute =
-            {
-                .module = computeShaderModule,
-            },
-    };
+    wgpu::ComputePipelineDescriptor descriptor{};
+    descriptor.layout = pipelineLayout;
+    descriptor.compute.module = computeShaderModule;
 
     descriptor.compute.entryPoint = "computeIrradiance";
     m_pipelineIrradiance = m_device.CreateComputePipeline(&descriptor);
@@ -346,10 +341,9 @@ void EnvironmentPreprocessor::createPerMipBindGroups(const wgpu::Texture &prefil
     m_perMipBindGroups.resize(mipLevelCount);
 
     // Create a buffer for the roughness parameter
-    wgpu::BufferDescriptor bufferDescriptor{
-        .usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst,
-        .size = sizeof(float),
-    };
+    wgpu::BufferDescriptor bufferDescriptor{};
+    bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+    bufferDescriptor.size = sizeof(float);
     for (uint32_t i = 0; i < mipLevelCount; ++i)
     {
         m_perMipUniformBuffers[i] = m_device.CreateBuffer(&bufferDescriptor);
@@ -358,29 +352,23 @@ void EnvironmentPreprocessor::createPerMipBindGroups(const wgpu::Texture &prefil
     }
 
     // Create a texture view descriptor for the output cubemap
-    wgpu::TextureViewDescriptor outputCubeViewDesc{
-        .format = wgpu::TextureFormat::RGBA16Float,
-        .dimension = wgpu::TextureViewDimension::e2DArray,
-        .baseMipLevel = 0,
-        .mipLevelCount = 1,
-        .baseArrayLayer = 0,
-        .arrayLayerCount = 6,
-    };
+    wgpu::TextureViewDescriptor outputCubeViewDesc{};
+    outputCubeViewDesc.format = wgpu::TextureFormat::RGBA16Float;
+    outputCubeViewDesc.dimension = wgpu::TextureViewDimension::e2DArray;
+    outputCubeViewDesc.baseMipLevel = 0;
+    outputCubeViewDesc.mipLevelCount = 1;
+    outputCubeViewDesc.baseArrayLayer = 0;
+    outputCubeViewDesc.arrayLayerCount = 6;
 
     // Create bind group descriptor
-    wgpu::BindGroupEntry bindGroup2Entries[] = {
-        {
-            .binding = 0,
-        },
-        {
-            .binding = 1,
-        },
-    };
-    wgpu::BindGroupDescriptor bindGroup2Descriptor{
-        .layout = m_bindGroupLayouts[2],
-        .entryCount = 2,
-        .entries = bindGroup2Entries,
-    };
+    wgpu::BindGroupEntry bindGroup2Entries[2]{};
+    bindGroup2Entries[0].binding = 0;
+    bindGroup2Entries[1].binding = 1;
+
+    wgpu::BindGroupDescriptor bindGroup2Descriptor{};
+    bindGroup2Descriptor.layout = m_bindGroupLayouts[2];
+    bindGroup2Descriptor.entryCount = 2;
+    bindGroup2Descriptor.entries = bindGroup2Entries;
 
     // Create bind groups for each mip level
     for (uint32_t mipLevel = 0; mipLevel < mipLevelCount; ++mipLevel)
