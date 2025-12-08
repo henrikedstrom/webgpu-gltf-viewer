@@ -40,79 +40,31 @@ MipmapGenerator::MipmapGenerator(const wgpu::Device &device)
     initUniformBuffers();
     initBindGroupLayouts();
     initComputePipelines();
+    initRenderPipeline();
 }
 
-void MipmapGenerator::GenerateMipmaps(const wgpu::Texture &texture, wgpu::Extent3D size, bool isCubeMap)
+
+
+void MipmapGenerator::GenerateMipmaps(const wgpu::Texture &texture, wgpu::Extent3D size, MipKind kind)
 {
-    uint32_t mipLevelCount = 1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
-
-    wgpu::TextureViewDescriptor viewDescriptor{};
-    viewDescriptor.format = isCubeMap ? wgpu::TextureFormat::RGBA16Float : wgpu::TextureFormat::RGBA8Unorm;
-    viewDescriptor.dimension = isCubeMap ? wgpu::TextureViewDimension::e2DArray : wgpu::TextureViewDimension::e2D;
-    viewDescriptor.baseMipLevel = 0;
-    viewDescriptor.mipLevelCount = 1; // Each view corresponds to a single mip level
-    viewDescriptor.baseArrayLayer = 0;
-    viewDescriptor.arrayLayerCount = isCubeMap ? 6u : 1u;
-
-    std::vector<wgpu::TextureView> mipLevelViews(mipLevelCount);
-
-    for (uint32_t i = 0; i < mipLevelCount; ++i)
+    switch (kind)
     {
-        viewDescriptor.baseMipLevel = i;
-        mipLevelViews[i] = texture.CreateView(&viewDescriptor);
+    case MipKind::LinearUNorm2D:
+        generate2DCompute(texture, size, m_pipeline2D, m_bindGroupLayout2D);
+        break;
+    case MipKind::Normal2D:
+        generate2DCompute(texture, size, m_pipelineNormal2D, m_bindGroupLayout2D);
+        break;
+    case MipKind::Float16Cube:
+        generateCubeCompute(texture, size);
+        break;
+    case MipKind::SRGB2D:
+        generate2DRenderSRGB(texture, size);
+        break;
+    default:
+        generate2DCompute(texture, size, m_pipeline2D, m_bindGroupLayout2D);
+        break;
     }
-
-    wgpu::Queue queue = m_device.GetQueue();
-    wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
-    wgpu::ComputePassEncoder computePass = encoder.BeginComputePass();
-
-    wgpu::ComputePipeline pipeline = isCubeMap ? m_pipelineCube : m_pipeline2D;
-    computePass.SetPipeline(pipeline);
-
-    wgpu::BindGroupLayout bindGroupLayout = isCubeMap ? m_bindGroupLayoutCube : m_bindGroupLayout2D;
-
-    wgpu::BindGroupDescriptor bindGroupDescriptor{};
-    bindGroupDescriptor.layout = bindGroupLayout;
-    bindGroupDescriptor.entryCount = 2;
-
-    wgpu::BindGroupEntry bindGroupEntries[2]{};
-    bindGroupEntries[0].binding = 0; // Previous mip level
-    bindGroupEntries[1].binding = 1; // Next mip level
-
-    uint32_t numFaces = isCubeMap ? 6 : 1;
-
-    for (uint32_t face = 0; face < numFaces; ++face)
-    {
-        if (isCubeMap)
-        {
-            // Set face index to compute shader
-            computePass.SetBindGroup(1, m_faceBindGroups[face], 0, nullptr);
-        }
-
-        for (uint32_t nextLevel = 1; nextLevel < mipLevelViews.size(); ++nextLevel)
-        {
-            uint32_t width = std::max(1u, size.width >> nextLevel);
-            uint32_t height = std::max(1u, size.height >> nextLevel);
-
-            // Update input and output textures to compute shader
-            bindGroupEntries[0].textureView = mipLevelViews[nextLevel - 1];
-            bindGroupEntries[1].textureView = mipLevelViews[nextLevel];
-            bindGroupDescriptor.entries = bindGroupEntries;
-
-            wgpu::BindGroup bindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
-            computePass.SetBindGroup(0, bindGroup, 0, nullptr);
-
-            constexpr uint32_t workgroupSize = 8;
-            uint32_t workgroupCountX = (width + workgroupSize - 1) / workgroupSize;
-            uint32_t workgroupCountY = (height + workgroupSize - 1) / workgroupSize;
-
-            computePass.DispatchWorkgroups(workgroupCountX, workgroupCountY, 1);
-        }
-    }
-
-    computePass.End();
-    wgpu::CommandBuffer commands = encoder.Finish();
-    queue.Submit(1, &commands);
 }
 
 void MipmapGenerator::initUniformBuffers()
@@ -203,6 +155,7 @@ void MipmapGenerator::initComputePipelines()
     std::vector<wgpu::BindGroupLayout> layoutsCube = {m_bindGroupLayoutCube, m_bindGroupLayoutFace};
     m_pipeline2D = createComputePipeline("./assets/shaders/mipmap_generator_2d.wgsl", layouts2D);
     m_pipelineCube = createComputePipeline("./assets/shaders/mipmap_generator_cube.wgsl", layoutsCube);
+    m_pipelineNormal2D = createComputePipeline("./assets/shaders/mipmap_generator_normal_2d.wgsl", layouts2D);
 }
 
 wgpu::ComputePipeline MipmapGenerator::createComputePipeline(const std::string &shaderPath,
@@ -229,4 +182,256 @@ wgpu::ComputePipeline MipmapGenerator::createComputePipeline(const std::string &
     descriptor.compute.entryPoint = "computeMipMap";
 
     return m_device.CreateComputePipeline(&descriptor);
+}
+
+wgpu::RenderPipeline MipmapGenerator::createRenderPipeline(const std::string &shaderPath, wgpu::TextureFormat colorFormat)
+{
+    std::string shaderCode = LoadShaderFile(shaderPath);
+
+    wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
+    wgslDesc.code = shaderCode.c_str();
+
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
+    shaderModuleDescriptor.nextInChain = &wgslDesc;
+    wgpu::ShaderModule shaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
+
+    // Bind group layout: sampler + sampled texture
+    wgpu::BindGroupLayoutEntry entries[2]{};
+    entries[0].binding = 0;
+    entries[0].visibility = wgpu::ShaderStage::Fragment;
+    entries[0].sampler.type = wgpu::SamplerBindingType::Filtering;
+
+    entries[1].binding = 1;
+    entries[1].visibility = wgpu::ShaderStage::Fragment;
+    entries[1].texture.sampleType = wgpu::TextureSampleType::Float;
+    entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+    entries[1].texture.multisampled = false;
+
+    wgpu::BindGroupLayoutDescriptor bglDesc{};
+    bglDesc.entryCount = 2;
+    bglDesc.entries = entries;
+    m_renderBindGroupLayout = m_device.CreateBindGroupLayout(&bglDesc);
+
+    wgpu::BindGroupLayout bindGroupLayouts[] = {m_renderBindGroupLayout};
+    wgpu::PipelineLayoutDescriptor layoutDescriptor{};
+    layoutDescriptor.bindGroupLayoutCount = 1;
+    layoutDescriptor.bindGroupLayouts = bindGroupLayouts;
+    wgpu::PipelineLayout pipelineLayout = m_device.CreatePipelineLayout(&layoutDescriptor);
+
+    wgpu::ColorTargetState colorTarget{};
+    colorTarget.format = colorFormat;
+
+    wgpu::FragmentState fragmentState{};
+    fragmentState.module = shaderModule;
+    fragmentState.entryPoint = "fs_main";
+    fragmentState.targetCount = 1;
+    fragmentState.targets = &colorTarget;
+
+    wgpu::RenderPipelineDescriptor desc{};
+    desc.layout = pipelineLayout;
+    desc.vertex.module = shaderModule;
+    desc.vertex.entryPoint = "vs_main";
+    desc.vertex.bufferCount = 0;
+    desc.vertex.buffers = nullptr;
+    desc.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+    desc.fragment = &fragmentState;
+
+    return m_device.CreateRenderPipeline(&desc);
+}
+
+void MipmapGenerator::initRenderPipeline()
+{
+    // Sampler for render downsample
+    wgpu::SamplerDescriptor sd{};
+    sd.addressModeU = wgpu::AddressMode::ClampToEdge;
+    sd.addressModeV = wgpu::AddressMode::ClampToEdge;
+    sd.addressModeW = wgpu::AddressMode::ClampToEdge;
+    sd.minFilter = wgpu::FilterMode::Linear;
+    sd.magFilter = wgpu::FilterMode::Linear;
+    sd.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+    m_renderSampler = m_device.CreateSampler(&sd);
+
+    // Create render pipeline targeting sRGB RGBA8 color
+    m_renderPipelineSRGB2D = createRenderPipeline("./assets/shaders/mipmap_downsample_render.wgsl",
+                                                  m_renderColorFormatSRGB);
+}
+
+void MipmapGenerator::generate2DCompute(const wgpu::Texture &texture, wgpu::Extent3D size,
+                                        const wgpu::ComputePipeline &pipeline,
+                                        const wgpu::BindGroupLayout &layout)
+{
+    uint32_t mipLevelCount = 1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
+
+    // Create mip level views
+    wgpu::TextureViewDescriptor viewDescriptor{};
+    viewDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+    viewDescriptor.dimension = wgpu::TextureViewDimension::e2D;
+    viewDescriptor.baseMipLevel = 0;
+    viewDescriptor.mipLevelCount = 1;
+    viewDescriptor.baseArrayLayer = 0;
+    viewDescriptor.arrayLayerCount = 1;
+
+    std::vector<wgpu::TextureView> mipLevelViews(mipLevelCount);
+    for (uint32_t i = 0; i < mipLevelCount; ++i)
+    {
+        viewDescriptor.baseMipLevel = i;
+        mipLevelViews[i] = texture.CreateView(&viewDescriptor);
+    }
+
+    wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
+    wgpu::ComputePassEncoder computePass = encoder.BeginComputePass();
+    computePass.SetPipeline(pipeline);
+
+    wgpu::BindGroupDescriptor bindGroupDescriptor{};
+    bindGroupDescriptor.layout = layout;
+    bindGroupDescriptor.entryCount = 2;
+    wgpu::BindGroupEntry bindGroupEntries[2]{};
+    bindGroupEntries[0].binding = 0;
+    bindGroupEntries[1].binding = 1;
+
+    for (uint32_t nextLevel = 1; nextLevel < mipLevelViews.size(); ++nextLevel)
+    {
+        uint32_t width = std::max(1u, size.width >> nextLevel);
+        uint32_t height = std::max(1u, size.height >> nextLevel);
+
+        bindGroupEntries[0].textureView = mipLevelViews[nextLevel - 1];
+        bindGroupEntries[1].textureView = mipLevelViews[nextLevel];
+        bindGroupDescriptor.entries = bindGroupEntries;
+
+        wgpu::BindGroup bindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
+        computePass.SetBindGroup(0, bindGroup, 0, nullptr);
+
+        constexpr uint32_t workgroupSize = 8;
+        uint32_t workgroupCountX = (width + workgroupSize - 1) / workgroupSize;
+        uint32_t workgroupCountY = (height + workgroupSize - 1) / workgroupSize;
+        computePass.DispatchWorkgroups(workgroupCountX, workgroupCountY, 1);
+    }
+
+    computePass.End();
+    wgpu::CommandBuffer commands = encoder.Finish();
+    m_device.GetQueue().Submit(1, &commands);
+}
+
+void MipmapGenerator::generateCubeCompute(const wgpu::Texture &texture, wgpu::Extent3D size)
+{
+    const uint32_t mipLevelCount =
+        1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
+
+    // Create views per mip level (2D array views over 6 faces)
+    wgpu::TextureViewDescriptor viewDescriptor{};
+    viewDescriptor.format = wgpu::TextureFormat::RGBA16Float;
+    viewDescriptor.dimension = wgpu::TextureViewDimension::e2DArray;
+    viewDescriptor.baseMipLevel = 0;
+    viewDescriptor.mipLevelCount = 1;
+    viewDescriptor.baseArrayLayer = 0;
+    viewDescriptor.arrayLayerCount = 6u;
+
+    std::vector<wgpu::TextureView> mipLevelViews(mipLevelCount);
+    for (uint32_t i = 0; i < mipLevelCount; ++i)
+    {
+        viewDescriptor.baseMipLevel = i;
+        mipLevelViews[i] = texture.CreateView(&viewDescriptor);
+    }
+
+    // Command encoding
+    wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
+    wgpu::ComputePassEncoder computePass = encoder.BeginComputePass();
+    computePass.SetPipeline(m_pipelineCube);
+
+    // Bind group layout for cube path
+    wgpu::BindGroupDescriptor bindGroupDescriptor{};
+    bindGroupDescriptor.layout = m_bindGroupLayoutCube;
+    bindGroupDescriptor.entryCount = 2;
+    wgpu::BindGroupEntry bindGroupEntries[2]{};
+    bindGroupEntries[0].binding = 0; // Previous mip level
+    bindGroupEntries[1].binding = 1; // Next mip level
+
+    // For each face and mip level
+    for (uint32_t face = 0; face < 6u; ++face)
+    {
+        // Set per-face uniform (group 1)
+        computePass.SetBindGroup(1, m_faceBindGroups[face], 0, nullptr);
+
+        for (uint32_t nextLevel = 1; nextLevel < mipLevelViews.size(); ++nextLevel)
+        {
+            const uint32_t width = std::max(1u, size.width >> nextLevel);
+            const uint32_t height = std::max(1u, size.height >> nextLevel);
+
+            // Bind prev/next level views (group 0)
+            bindGroupEntries[0].textureView = mipLevelViews[nextLevel - 1];
+            bindGroupEntries[1].textureView = mipLevelViews[nextLevel];
+            bindGroupDescriptor.entries = bindGroupEntries;
+            wgpu::BindGroup bindGroup = m_device.CreateBindGroup(&bindGroupDescriptor);
+            computePass.SetBindGroup(0, bindGroup, 0, nullptr);
+
+            constexpr uint32_t workgroupSize = 8;
+            const uint32_t workgroupCountX = (width + workgroupSize - 1) / workgroupSize;
+            const uint32_t workgroupCountY = (height + workgroupSize - 1) / workgroupSize;
+            computePass.DispatchWorkgroups(workgroupCountX, workgroupCountY, 1);
+        }
+    }
+
+    computePass.End();
+    wgpu::CommandBuffer cb = encoder.Finish();
+    m_device.GetQueue().Submit(1, &cb);
+}
+
+void MipmapGenerator::generate2DRenderSRGB(const wgpu::Texture &texture, wgpu::Extent3D size)
+{
+    const uint32_t mipLevelCount = 1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
+
+    // Create command encoder
+    wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
+
+    // Iterate over mip levels
+    for (uint32_t nextLevel = 1; nextLevel < mipLevelCount; ++nextLevel)
+    {
+        // Views for prev (sampled) and next (render target) levels
+        wgpu::TextureViewDescriptor prevDesc{};
+        prevDesc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
+        prevDesc.dimension = wgpu::TextureViewDimension::e2D;
+        prevDesc.baseMipLevel = nextLevel - 1;
+        prevDesc.mipLevelCount = 1;
+        prevDesc.baseArrayLayer = 0;
+        prevDesc.arrayLayerCount = 1;
+        wgpu::TextureView prevView = texture.CreateView(&prevDesc);
+
+        wgpu::TextureViewDescriptor nextDesc = prevDesc;
+        nextDesc.baseMipLevel = nextLevel;
+        wgpu::TextureView nextView = texture.CreateView(&nextDesc);
+
+        // Create bind group for prev level
+        wgpu::BindGroupEntry entries[2]{};
+        entries[0].binding = 0;
+        entries[0].sampler = m_renderSampler;
+        entries[1].binding = 1;
+        entries[1].textureView = prevView;
+
+        wgpu::BindGroupDescriptor bgd{};
+        bgd.layout = m_renderBindGroupLayout;
+        bgd.entryCount = 2;
+        bgd.entries = entries;
+        wgpu::BindGroup bindGroup = m_device.CreateBindGroup(&bgd);
+
+        // Render pass to write next level
+        wgpu::RenderPassColorAttachment color{};
+        color.view = nextView;
+        color.loadOp = wgpu::LoadOp::Clear;
+        color.storeOp = wgpu::StoreOp::Store;
+        color.clearValue = {0.0f, 0.0f, 0.0f, 0.0f};
+
+        wgpu::RenderPassDescriptor rp{};
+        rp.colorAttachmentCount = 1;
+        rp.colorAttachments = &color;
+
+        wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&rp);
+        pass.SetPipeline(m_renderPipelineSRGB2D);
+        pass.SetBindGroup(0, bindGroup);
+        pass.Draw(3, 1, 0, 0); // Fullscreen triangle
+        pass.End();
+    }
+
+    // Submit
+    wgpu::CommandBuffer cb = encoder.Finish();
+    m_device.GetQueue().Submit(1, &cb);
 }

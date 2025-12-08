@@ -1,5 +1,22 @@
+//=========================================================
+// 2D UNORM mip generator (compute path)
+// - previousMipLevel: L-1 UNORM texture_2d<f32>
+// - nextMipLevel: L storage texture (rgba8unorm)
+// - Performs a 2x2 box filter
+//=========================================================
+
+
+//=========================================================
+// Bind Group Declarations
+//=========================================================
+
 @group(0) @binding(0) var previousMipLevel: texture_2d<f32>;
 @group(0) @binding(1) var nextMipLevel: texture_storage_2d<rgba8unorm, write>;
+
+
+//=========================================================
+// Compute Shader Entry Point
+//=========================================================
 
 @compute @workgroup_size(8, 8)
 fn computeMipMap(@builtin(global_invocation_id) id: vec3<u32>) {

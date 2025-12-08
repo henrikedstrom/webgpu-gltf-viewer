@@ -1,5 +1,13 @@
 //=========================================================
-// Global Uniforms & Bind Group Declarations
+// Panorama (equirectangular) to cubemap conversion
+// - Input: 2D equirectangular texture (texture_2d<f32>)
+// - Output: RGBA16F cubemap as 2D-array storage (6 layers)
+// - Per-face selection via group(1) faceIndex; manual bilinear sampling
+//=========================================================
+
+
+//=========================================================
+// Uniforms & Bind Group Declarations
 //=========================================================
 
 // Bind Group 0 - Common parameters
@@ -11,10 +19,11 @@
 @group(1) @binding(0) var<uniform> faceIndex: u32;
 
 //=========================================================
-// Global Constants
+// Constants
 //=========================================================
 
 const PI: f32 = 3.14159265359;
+
 
 //=========================================================
 // Utility Functions
@@ -65,6 +74,7 @@ fn uvToDirection(uv: vec2<f32>, face: u32) -> vec3<f32> {
 
     return normalize(faceDirs[face] + (u * rightVectors[face]) + (v * upVectors[face]));
 }
+
 
 //=========================================================
 // Compute Shader Entry Point

@@ -1,6 +1,13 @@
+//=========================================================
+// glTF PBR (metallic-roughness) shading
+// - Vertex + fragment with IBL (irradiance, prefiltered specular, BRDF LUT)
+// - Inputs: GlobalUniforms, ModelUniforms, MaterialUniforms, PBR textures
+// - Output: tone-mapped sRGB color
+//=========================================================
 
-//---------------------------------------------------------------------
-// Uniforms
+//=========================================================
+// Uniforms & Bind Group Declarations
+//=========================================================
 
 struct GlobalUniforms {
     viewMatrix: mat4x4<f32>,
@@ -26,8 +33,27 @@ struct MaterialUniforms {
     alphaMode: i32,   // 0 = Opaque, 1 = Mask, 2 = Blend
 };
 
-//---------------------------------------------------------------------
-// Constants and Types
+@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
+@group(0) @binding(1) var iblSampler: sampler;
+@group(0) @binding(2) var environmentTexture: texture_cube<f32>;
+@group(0) @binding(3) var iblIrradianceTexture: texture_cube<f32>;
+@group(0) @binding(4) var iblSpecularTexture: texture_cube<f32>;
+@group(0) @binding(5) var iblBRDFIntegrationLUTTexture: texture_2d<f32>;
+@group(0) @binding(6) var iblBRDFIntegrationLUTSampler: sampler;
+
+@group(1) @binding(0) var<uniform> modelUniforms: ModelUniforms;
+@group(1) @binding(1) var<uniform> materialUniforms: MaterialUniforms;
+@group(1) @binding(2) var textureSampler: sampler;
+@group(1) @binding(3) var baseColorTexture: texture_2d<f32>;
+@group(1) @binding(4) var metallicRoughnessTexture: texture_2d<f32>;
+@group(1) @binding(5) var normalTexture: texture_2d<f32>;
+@group(1) @binding(6) var occlusionTexture: texture_2d<f32>;
+@group(1) @binding(7) var emissiveTexture: texture_2d<f32>;
+
+
+//=========================================================
+// Constants & Types
+//=========================================================
 
 const pi = 3.141592653589793;
 
@@ -62,29 +88,10 @@ struct VertexOutput {
     @location(5) viewDirectionWorld: vec3<f32>  // View direction (in World Space)
 };
 
-//---------------------------------------------------------------------
-// Bind Groups
 
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-@group(0) @binding(1) var iblSampler: sampler;
-@group(0) @binding(2) var environmentTexture: texture_cube<f32>;
-@group(0) @binding(3) var iblIrradianceTexture: texture_cube<f32>;
-@group(0) @binding(4) var iblSpecularTexture: texture_cube<f32>;
-@group(0) @binding(5) var iblBRDFIntegrationLUTTexture: texture_2d<f32>;
-@group(0) @binding(6) var iblBRDFIntegrationLUTSampler: sampler;
-
-@group(1) @binding(0) var<uniform> modelUniforms: ModelUniforms;
-@group(1) @binding(1) var<uniform> materialUniforms: MaterialUniforms;
-@group(1) @binding(2) var textureSampler: sampler;
-@group(1) @binding(3) var baseColorTexture: texture_2d<f32>;
-@group(1) @binding(4) var metallicRoughnessTexture: texture_2d<f32>;
-@group(1) @binding(5) var normalTexture: texture_2d<f32>;
-@group(1) @binding(6) var occlusionTexture: texture_2d<f32>;
-@group(1) @binding(7) var emissiveTexture: texture_2d<f32>;
-
-
-//---------------------------------------------------------------------
+//=========================================================
 // Utility Functions
+//=========================================================
 
 fn clampedDot(a: vec3f, b: vec3f) -> f32 {
   return clamp(dot(a, b), 0.0, 1.0);
@@ -235,11 +242,13 @@ fn toneMap(colorIn: vec3f) -> vec3f {
   return color;
 }
 
-//---------------------------------------------------------------------
+
+//=========================================================
 // Vertex Shader
+//=========================================================
 
 @vertex
-fn vertexMain(in: VertexInput) -> VertexOutput {
+fn vs_main(in: VertexInput) -> VertexOutput {
 
     // Transform position and normal to world space
     let worldPosition = modelUniforms.modelMatrix * vec4<f32>(in.position, 1.0);
@@ -262,11 +271,13 @@ fn vertexMain(in: VertexInput) -> VertexOutput {
     return output;
 }
 
-//---------------------------------------------------------------------
+
+//=========================================================
 // Fragment Shader
+//=========================================================
 
 @fragment
-fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
+fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     // Sample base color and metallic-roughness textures
     let baseColor = textureSample(baseColorTexture, textureSampler, in.texCoord0).rgba;

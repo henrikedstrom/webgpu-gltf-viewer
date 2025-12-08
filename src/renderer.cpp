@@ -54,7 +54,7 @@ int FloorPow2(int x)
 
 template <typename TextureInfo>
 void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, glm::vec4 defaultValue,
-                   wgpu::Device device, MipmapGenerator &mipmapGenerator, wgpu::Texture &texture,
+                   wgpu::Device device, MipmapGenerator &mipmapGenerator, MipmapGenerator::MipKind kind, wgpu::Texture &texture,
                    wgpu::TextureView &textureView)
 {
     // Set default pixel value
@@ -75,65 +75,94 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, g
     // Compute the number of mip levels
     uint32_t mipLevelCount = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
 
-    // Create a WebGPU texture descriptor with mipmapping enabled
-    wgpu::TextureDescriptor textureDescriptor{};
-    textureDescriptor.size = {width, height, 1};
-    textureDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
-    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
-                              wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc;
-    textureDescriptor.mipLevelCount = mipLevelCount;
-
-    // Create an intermediate texture for generating mipmaps
-    wgpu::Texture intermediateTexture = device.CreateTexture(&textureDescriptor);
-
-    // Upload the texture data
-    wgpu::ImageCopyTexture imageCopyTexture{};
-    imageCopyTexture.texture = intermediateTexture;
-    imageCopyTexture.mipLevel = 0;
-    imageCopyTexture.origin = {0, 0, 0};
-    imageCopyTexture.aspect = wgpu::TextureAspect::All;
-
-    wgpu::TextureDataLayout source;
-    source.offset = 0;
-    source.bytesPerRow = 4 * width * sizeof(uint8_t);
-    source.rowsPerImage = height;
-
-    device.GetQueue().WriteTexture(&imageCopyTexture, data, 4 * width * height * sizeof(uint8_t), &source,
-                                   &textureDescriptor.size);
-
-    // Generate mipmaps
-    mipmapGenerator.GenerateMipmaps(intermediateTexture, textureDescriptor.size, false);
-
-    // Set TextureDescriptor properties for the final texture
-    textureDescriptor.format = format;
-    textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
-
-    // Create the final texture
-    texture = device.CreateTexture(&textureDescriptor);
-
-    // Copy the intermediate texture to the final texture
-    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-
-    for (uint32_t level = 0; level < mipLevelCount; ++level)
+    if (kind == MipmapGenerator::MipKind::SRGB2D)
     {
-        uint32_t mipWidth = std::max(width >> level, 1u);
-        uint32_t mipHeight = std::max(height >> level, 1u);
-        wgpu::ImageCopyTexture src{};
-        src.texture = intermediateTexture;
-        src.mipLevel = level;
-        src.origin = {0, 0, 0};
-        src.aspect = wgpu::TextureAspect::All;
-        wgpu::ImageCopyTexture dst{};
-        dst.texture = texture;
-        dst.mipLevel = level;
-        dst.origin = {0, 0, 0};
-        dst.aspect = wgpu::TextureAspect::All;
-        wgpu::Extent3D extent = {mipWidth, mipHeight, 1};
-        encoder.CopyTextureToTexture(&src, &dst, &extent);
-    }
+        // Create final SRGB texture directly with render attachment usage
+        wgpu::TextureDescriptor finalDesc{};
+        finalDesc.size = {width, height, 1};
+        finalDesc.format = format; // expected RGBA8UnormSrgb
+        finalDesc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::CopyDst;
+        finalDesc.mipLevelCount = mipLevelCount;
+        texture = device.CreateTexture(&finalDesc);
 
-    wgpu::CommandBuffer commandBuffer = encoder.Finish();
-    device.GetQueue().Submit(1, &commandBuffer);
+        // Upload level 0
+        wgpu::ImageCopyTexture imageCopyTexture{};
+        imageCopyTexture.texture = texture;
+        imageCopyTexture.mipLevel = 0;
+        imageCopyTexture.origin = {0, 0, 0};
+        imageCopyTexture.aspect = wgpu::TextureAspect::All;
+
+        wgpu::TextureDataLayout source{};
+        source.offset = 0;
+        source.bytesPerRow = 4 * width * sizeof(uint8_t);
+        source.rowsPerImage = height;
+
+        device.GetQueue().WriteTexture(&imageCopyTexture, data, 4 * width * height * sizeof(uint8_t), &source, &finalDesc.size);
+
+        // Generate mips directly via render path
+        mipmapGenerator.GenerateMipmaps(texture, finalDesc.size, kind);
+    }
+    else
+    {
+        // Create an intermediate texture for compute-based mip generation (UNORM)
+        wgpu::TextureDescriptor textureDescriptor{};
+        textureDescriptor.size = {width, height, 1};
+        textureDescriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+        textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
+                                  wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::CopySrc;
+        textureDescriptor.mipLevelCount = mipLevelCount;
+
+        wgpu::Texture intermediateTexture = device.CreateTexture(&textureDescriptor);
+
+        // Upload the texture data to intermediate
+        wgpu::ImageCopyTexture imageCopyTexture{};
+        imageCopyTexture.texture = intermediateTexture;
+        imageCopyTexture.mipLevel = 0;
+        imageCopyTexture.origin = {0, 0, 0};
+        imageCopyTexture.aspect = wgpu::TextureAspect::All;
+
+        wgpu::TextureDataLayout source;
+        source.offset = 0;
+        source.bytesPerRow = 4 * width * sizeof(uint8_t);
+        source.rowsPerImage = height;
+
+        device.GetQueue().WriteTexture(&imageCopyTexture, data, 4 * width * height * sizeof(uint8_t), &source,
+                                       &textureDescriptor.size);
+
+        // Generate mipmaps via compute (normal-aware or linear depending on kind)
+        mipmapGenerator.GenerateMipmaps(intermediateTexture, textureDescriptor.size, kind == MipmapGenerator::MipKind::Normal2D ? MipmapGenerator::MipKind::Normal2D : MipmapGenerator::MipKind::LinearUNorm2D);
+
+        // Create the final texture (may be sRGB or UNORM depending on input format)
+        textureDescriptor.format = format;
+        textureDescriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+        wgpu::Texture finalTexture = device.CreateTexture(&textureDescriptor);
+
+        // Copy the intermediate texture to the final texture
+        wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+
+        for (uint32_t level = 0; level < mipLevelCount; ++level)
+        {
+            uint32_t mipWidth = std::max(width >> level, 1u);
+            uint32_t mipHeight = std::max(height >> level, 1u);
+            wgpu::ImageCopyTexture src{};
+            src.texture = intermediateTexture;
+            src.mipLevel = level;
+            src.origin = {0, 0, 0};
+            src.aspect = wgpu::TextureAspect::All;
+            wgpu::ImageCopyTexture dst{};
+            dst.texture = finalTexture;
+            dst.mipLevel = level;
+            dst.origin = {0, 0, 0};
+            dst.aspect = wgpu::TextureAspect::All;
+            wgpu::Extent3D extent = {mipWidth, mipHeight, 1};
+            encoder.CopyTextureToTexture(&src, &dst, &extent);
+        }
+
+        wgpu::CommandBuffer commandBuffer = encoder.Finish();
+        device.GetQueue().Submit(1, &commandBuffer);
+
+        texture = finalTexture;
+    }
 
     // Create a texture view covering all mip levels
     wgpu::TextureViewDescriptor viewDescriptor{};
@@ -259,7 +288,7 @@ void Renderer::Render(const glm::mat4 &modelMatrix, const CameraUniformsInput &c
 
     // Render the environment
     pass.SetPipeline(m_environmentPipeline);
-    pass.Draw(6, 1, 0, 0);
+    pass.Draw(3, 1, 0, 0); // Fullscreen triangle
 
     // Set up vertex and index buffers
     pass.SetVertexBuffer(0, m_vertexBuffer);
@@ -571,13 +600,13 @@ void Renderer::CreateEnvironmentTexturesAndSamplers(const Environment &environme
     // Upload panorama texture and resample to cubemap
     PanoramaToCubemapConverter panoramaToCubemapConverter(m_device);
     panoramaToCubemapConverter.UploadAndConvert(panoramaTexture, m_environmentTexture);
-    mipmapGenerator.GenerateMipmaps(m_environmentTexture, {environmentCubeSize, environmentCubeSize, 6}, true);
+    mipmapGenerator.GenerateMipmaps(m_environmentTexture, {environmentCubeSize, environmentCubeSize, 6}, MipmapGenerator::MipKind::Float16Cube);
 
     // Precompute IBL maps
     EnvironmentPreprocessor environmentPreprocessor(m_device);
     environmentPreprocessor.GenerateMaps(m_environmentTexture, m_iblIrradianceTexture, m_iblSpecularTexture,
                                          m_iblBrdfIntegrationLUT);
-    mipmapGenerator.GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, true);
+    mipmapGenerator.GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, MipmapGenerator::MipKind::Float16Cube);
 
     // Create a sampler for the environment texture
     wgpu::SamplerDescriptor samplerDescriptor{};
@@ -674,26 +703,26 @@ void Renderer::CreateMaterials(const Model &model)
 
             // Base Color Texture
             CreateTexture(model.GetTexture(srcMat.m_baseColorTexture), wgpu::TextureFormat::RGBA8UnormSrgb,
-                          defaultBaseColor, m_device, mipmapGenerator, dstMat.m_baseColorTexture,
+                          defaultBaseColor, m_device, mipmapGenerator, MipmapGenerator::MipKind::SRGB2D, dstMat.m_baseColorTexture,
                           dstMat.m_baseColorTextureView);
 
             // Metallic-Roughness
             CreateTexture(model.GetTexture(srcMat.m_metallicRoughnessTexture), wgpu::TextureFormat::RGBA8Unorm,
-                          defaultMetallicRoughness, m_device, mipmapGenerator, dstMat.m_metallicRoughnessTexture,
+                          defaultMetallicRoughness, m_device, mipmapGenerator, MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_metallicRoughnessTexture,
                           dstMat.m_metallicRoughnessTextureView);
 
             // Normal Texture
             CreateTexture(model.GetTexture(srcMat.m_normalTexture), wgpu::TextureFormat::RGBA8Unorm, defaultNormal,
-                          m_device, mipmapGenerator, dstMat.m_normalTexture, dstMat.m_normalTextureView);
+                          m_device, mipmapGenerator, MipmapGenerator::MipKind::Normal2D, dstMat.m_normalTexture, dstMat.m_normalTextureView);
 
             // Occlusion Texture
             CreateTexture(model.GetTexture(srcMat.m_occlusionTexture), wgpu::TextureFormat::RGBA8Unorm,
-                          defaultOcculsion, m_device, mipmapGenerator, dstMat.m_occlusionTexture,
+                          defaultOcculsion, m_device, mipmapGenerator, MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_occlusionTexture,
                           dstMat.m_occlusionTextureView);
 
             // Emissive Texture
             CreateTexture(model.GetTexture(srcMat.m_emissiveTexture), wgpu::TextureFormat::RGBA8UnormSrgb,
-                          defaultEmissive, m_device, mipmapGenerator, dstMat.m_emissiveTexture,
+                          defaultEmissive, m_device, mipmapGenerator, MipmapGenerator::MipKind::SRGB2D, dstMat.m_emissiveTexture,
                           dstMat.m_emissiveTextureView);
 
             // Create bind group
@@ -800,7 +829,7 @@ void Renderer::CreateModelRenderPipelines()
 
     wgpu::FragmentState fragmentState{};
     fragmentState.module = m_modelShaderModule;
-    fragmentState.entryPoint = "fragmentMain";
+    fragmentState.entryPoint = "fs_main";
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTargetState;
 
@@ -820,7 +849,7 @@ void Renderer::CreateModelRenderPipelines()
     wgpu::RenderPipelineDescriptor descriptor{};
     descriptor.layout = pipelineLayout;
     descriptor.vertex.module = m_modelShaderModule;
-    descriptor.vertex.entryPoint = "vertexMain";
+    descriptor.vertex.entryPoint = "vs_main";
     descriptor.vertex.bufferCount = 1;
     descriptor.vertex.buffers = &vertexBufferLayout;
     descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
@@ -852,7 +881,7 @@ void Renderer::CreateEnvironmentRenderPipeline()
 
     wgpu::FragmentState fragmentState{};
     fragmentState.module = m_modelShaderModule;
-    fragmentState.entryPoint = "fragmentMain";
+    fragmentState.entryPoint = "fs_main";
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTargetState;
 
@@ -872,7 +901,7 @@ void Renderer::CreateEnvironmentRenderPipeline()
 
     wgpu::FragmentState environmentFragmentState{};
     environmentFragmentState.module = m_environmentShaderModule;
-    environmentFragmentState.entryPoint = "fragmentMain";
+    environmentFragmentState.entryPoint = "fs_main";
     environmentFragmentState.targetCount = 1;
     environmentFragmentState.targets = &colorTargetState;
 
@@ -886,7 +915,7 @@ void Renderer::CreateEnvironmentRenderPipeline()
     wgpu::RenderPipelineDescriptor environmentDescriptor{};
     environmentDescriptor.layout = environmentPipelineLayout;
     environmentDescriptor.vertex.module = m_environmentShaderModule;
-    environmentDescriptor.vertex.entryPoint = "vertexMain";
+    environmentDescriptor.vertex.entryPoint = "vs_main";
     environmentDescriptor.vertex.bufferCount = 0;
     environmentDescriptor.vertex.buffers = nullptr; // Vertices encoded in shader
     environmentDescriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;

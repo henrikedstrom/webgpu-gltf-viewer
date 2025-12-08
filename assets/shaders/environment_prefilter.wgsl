@@ -1,10 +1,13 @@
+//=========================================================
 // This WGSL file implements three separate compute passes for IBL:
 // 1) computeIrradiance: Generates diffuse irradiance for a cube map (Lambertian).
 // 2) computePrefilteredSpecular: Generates specular prefiltered environment map using GGX.
 // 3) computeLUT: Computes the BRDF integration LUT for specular IBL (A and B channels).
+//=========================================================
+
 
 //=========================================================
-// Global Uniforms & Bind Group Declarations
+// Uniforms & Bind Group Declarations
 //=========================================================
 
 // Bind Group 0 - Common parameters
@@ -23,7 +26,7 @@
 
 
 //=========================================================
-// Global Constants
+// Constants
 //=========================================================
 
 const PI: f32 = 3.14159265359;

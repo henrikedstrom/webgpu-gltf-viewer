@@ -1,6 +1,14 @@
+//=========================================================
+// Environment background rendering
+// - Fullscreen quad sampling an environment cubemap
+// - Uses inverse view/projection to orient sky to camera
+// - Output: tone-mapped sRGB color
+//=========================================================
 
-//---------------------------------------------------------------------
-// Uniforms
+
+//=========================================================
+// Uniforms & Bind Group Declarations
+//=========================================================
 
 struct GlobalUniforms {
     viewMatrix: mat4x4<f32>,
@@ -10,9 +18,18 @@ struct GlobalUniforms {
     cameraPositionWorld: vec3<f32>
 };
 
+@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
+@group(0) @binding(1) var environmentCubeSampler: sampler;
+@group(0) @binding(2) var environmentTexture: texture_cube<f32>;
+@group(0) @binding(3) var iblIrradianceTexture: texture_cube<f32>;
+@group(0) @binding(4) var iblSpecularTexture: texture_cube<f32>;
+@group(0) @binding(5) var iblBRDFIntegrationLUTTexture: texture_2d<f32>;
+@group(0) @binding(6) var iblBRDFIntegrationLUTSampler: sampler;
 
-//---------------------------------------------------------------------
-// Constants and Types
+
+//=========================================================
+// Constants & Types
+//=========================================================
 
 const pi = 3.141592653589793;
 
@@ -22,8 +39,9 @@ struct VertexOutput {
 };
 
 
-//---------------------------------------------------------------------
+//=========================================================
 // Utility Functions
+//=========================================================
 
 fn toneMapPBRNeutral(colorIn: vec3f) -> vec3f {
     let startCompression: f32 = 0.8 - 0.04;
@@ -62,43 +80,38 @@ fn toneMap(colorIn: vec3f) -> vec3f {
   return color;
 }
 
-//---------------------------------------------------------------------
-// Bind Groups
 
-@group(0) @binding(0) var<uniform> globalUniforms: GlobalUniforms;
-@group(0) @binding(1) var environmentCubeSampler: sampler;
-@group(0) @binding(2) var environmentTexture: texture_cube<f32>;
-@group(0) @binding(3) var iblIrradianceTexture: texture_cube<f32>;
-@group(0) @binding(4) var iblSpecularTexture: texture_cube<f32>;
-@group(0) @binding(5) var iblBRDFIntegrationLUTTexture: texture_2d<f32>;
-@group(0) @binding(6) var iblBRDFIntegrationLUTSampler: sampler;
-
-//---------------------------------------------------------------------
+//=========================================================
 // Vertex Shader
+//=========================================================
 
 @vertex
-fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    var positions: array<vec2f, 6> = array<vec2f, 6>(
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    // Fullscreen triangle (canonical mapping uv = pos * 0.5 + 0.5 in-viewport)
+    var positions: array<vec2f, 3> = array<vec2f, 3>(
         vec2f(-1.0, -1.0),
-        vec2f(1.0, -1.0),
-        vec2f(1.0, 1.0),
-        vec2f(1.0, 1.0),
-        vec2f(-1.0, 1.0),
-        vec2f(-1.0, -1.0)
+        vec2f( 3.0, -1.0),
+        vec2f(-1.0,  3.0)
+    );
+    var uvs: array<vec2f, 3> = array<vec2f, 3>(
+        vec2f(0.0, 0.0),
+        vec2f(2.0, 0.0),
+        vec2f(0.0, 2.0)
     );
 
     var output: VertexOutput;
     output.position = vec4f(positions[vertexIndex], 0.0, 1.0);
-    output.uv = positions[vertexIndex] * 0.5 + 0.5;
+    output.uv = uvs[vertexIndex];
     return output;
 }
 
 
-//---------------------------------------------------------------------
+//=========================================================
 // Fragment Shader
+//=========================================================
 
 @fragment
-fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
     // Convert the UV coordinates to NDC
     let ndc = input.uv * 2.0 - 1.0;
