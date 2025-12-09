@@ -343,8 +343,6 @@ void Renderer::UpdateModel(const Model &model)
     m_vertexBuffer = nullptr;
     m_indexBuffer = nullptr;
 
-    m_sampler = nullptr;
-
     // Create new model resources
     CreateVertexBuffer(model);
     CreateIndexBuffer(model);
@@ -369,11 +367,9 @@ void Renderer::UpdateEnvironment(const Environment &environment)
     m_iblSpecularTextureView = nullptr;
     m_iblBrdfIntegrationLUT = nullptr;
     m_iblBrdfIntegrationLUTView = nullptr;
-    m_environmentCubeSampler = nullptr;
-    m_iblBrdfIntegrationLUTSampler = nullptr;
 
     // Create new environment resources
-    CreateEnvironmentTexturesAndSamplers(environment);
+    CreateEnvironmentTextures(environment);
     CreateGlobalBindGroup();
 
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -387,6 +383,8 @@ void Renderer::InitGraphics(const Environment &environment, const Model &model, 
     CreateDepthTexture(width, height);
 
     CreateBindGroupLayouts();
+
+    CreateSamplers();
 
     CreateModelRenderPipelines();
     CreateEnvironmentRenderPipeline();
@@ -516,6 +514,48 @@ void Renderer::CreateBindGroupLayouts()
     m_modelBindGroupLayout = m_device.CreateBindGroupLayout(&modelBindGroupLayoutDescriptor);
 }
 
+void Renderer::CreateSamplers()
+{
+    // Model textures sampler
+    if (!m_sampler)
+    {
+        wgpu::SamplerDescriptor samplerDescriptor{};
+        samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
+        samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
+        samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
+        samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+        m_sampler = m_device.CreateSampler(&samplerDescriptor);
+    }
+
+    // Environment cube sampler
+    if (!m_environmentCubeSampler)
+    {
+        wgpu::SamplerDescriptor samplerDescriptor{};
+        samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
+        samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
+        samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
+        samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+        m_environmentCubeSampler = m_device.CreateSampler(&samplerDescriptor);
+    }
+
+    // BRDF LUT sampler
+    if (!m_iblBrdfIntegrationLUTSampler)
+    {
+        wgpu::SamplerDescriptor samplerDescriptor{};
+        samplerDescriptor.addressModeU = wgpu::AddressMode::ClampToEdge;
+        samplerDescriptor.addressModeV = wgpu::AddressMode::ClampToEdge;
+        samplerDescriptor.addressModeW = wgpu::AddressMode::ClampToEdge;
+        samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
+        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
+        m_iblBrdfIntegrationLUTSampler = m_device.CreateSampler(&samplerDescriptor);
+    }
+}
+
 void Renderer::CreateVertexBuffer(const Model &model)
 {
     const std::vector<Model::Vertex> &vertexData = model.GetVertices();
@@ -574,7 +614,7 @@ void Renderer::CreateUniformBuffers()
     m_device.GetQueue().WriteBuffer(m_modelUniformBuffer, 0, &modelUniforms, sizeof(ModelUniforms));
 }
 
-void Renderer::CreateEnvironmentTexturesAndSamplers(const Environment &environment)
+void Renderer::CreateEnvironmentTextures(const Environment &environment)
 {
     MipmapGenerator mipmapGenerator(m_device);
 
@@ -604,24 +644,6 @@ void Renderer::CreateEnvironmentTexturesAndSamplers(const Environment &environme
                                          m_iblBrdfIntegrationLUT);
     mipmapGenerator.GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, MipmapGenerator::MipKind::Float16Cube);
 
-    // Create a sampler for the environment texture
-    wgpu::SamplerDescriptor samplerDescriptor{};
-    samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
-    samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
-    samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
-    samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-    m_environmentCubeSampler = m_device.CreateSampler(&samplerDescriptor);
-
-    // Create a sampler for the IBL BRDF LUT texture
-    samplerDescriptor.addressModeU = wgpu::AddressMode::ClampToEdge;
-    samplerDescriptor.addressModeV = wgpu::AddressMode::ClampToEdge;
-    samplerDescriptor.addressModeW = wgpu::AddressMode::ClampToEdge;
-    samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
-    samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
-    m_iblBrdfIntegrationLUTSampler = m_device.CreateSampler(&samplerDescriptor);
 }
 
 void Renderer::CreateSubMeshes(const Model &model)
@@ -654,16 +676,6 @@ void Renderer::CreateMaterials(const Model &model)
     // Check if the model has any textures
     if (!model.GetMaterials().empty())
     {
-        // Create a sampler for model textures
-        wgpu::SamplerDescriptor samplerDescriptor{};
-        samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
-        samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
-        samplerDescriptor.addressModeW = wgpu::AddressMode::Repeat;
-        samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
-        samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
-        samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-        m_sampler = m_device.CreateSampler(&samplerDescriptor);
-
         MipmapGenerator mipmapGenerator(m_device);
 
         m_materials.resize(model.GetMaterials().size());

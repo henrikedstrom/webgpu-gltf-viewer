@@ -51,10 +51,11 @@ class Renderer
     void ConfigureSurface(uint32_t width, uint32_t height);
     void CreateDepthTexture(uint32_t width, uint32_t height);
     void CreateBindGroupLayouts();
+    void CreateSamplers();
     void CreateVertexBuffer(const Model &model);
     void CreateIndexBuffer(const Model &model);
     void CreateUniformBuffers();
-    void CreateEnvironmentTexturesAndSamplers(const Environment &environment);
+    void CreateEnvironmentTextures(const Environment &environment);
     void CreateSubMeshes(const Model &model);
     void CreateMaterials(const Model &model);
     void CreateGlobalBindGroup();
