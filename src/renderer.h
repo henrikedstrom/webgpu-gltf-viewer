@@ -61,6 +61,7 @@ class Renderer
     void CreateGlobalBindGroup();
     void CreateEnvironmentRenderPipeline();
     void CreateModelRenderPipelines();
+    void CreateRenderPassDescriptor();
     void UpdateUniforms(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera) const;
     void SortTransparentMeshes(const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix);
     void GetAdapter(const std::function<void(wgpu::Adapter)> &callback);
@@ -168,4 +169,8 @@ class Renderer
     std::vector<Material> m_materials;
 
     std::vector<SubMeshDepthInfo> m_transparentMeshesDepthSorted;
+
+    wgpu::RenderPassDescriptor m_renderPassDescriptor{};
+    wgpu::RenderPassColorAttachment m_colorAttachment{};
+    wgpu::RenderPassDepthStencilAttachment m_depthAttachment{};
 };

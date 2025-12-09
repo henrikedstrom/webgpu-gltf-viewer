@@ -246,13 +246,18 @@ void Renderer::Resize(uint32_t width, uint32_t height)
 
     // Update the surface configuration
     ConfigureSurface(width, height);
+
+    // Refresh depth attachment view
+    m_depthAttachment.view = m_depthTextureView;
 }
 
 void Renderer::Render(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera)
 {
+    // Update view dependent data
     UpdateUniforms(modelMatrix, camera);
     SortTransparentMeshes(modelMatrix, camera.viewMatrix);
 
+    // Ge the current surface texture and update the color attachment view
     wgpu::SurfaceTexture surfaceTexture;
     m_surface.GetCurrentTexture(&surfaceTexture);
     if (!surfaceTexture.texture)
@@ -260,33 +265,16 @@ void Renderer::Render(const glm::mat4 &modelMatrix, const CameraUniformsInput &c
         std::cerr << "Error: Failed to get current surface texture." << std::endl;
         return;
     }
+    m_colorAttachment.view = surfaceTexture.texture.CreateView();
 
-    wgpu::RenderPassColorAttachment attachment{};
-    attachment.view = surfaceTexture.texture.CreateView();
-    attachment.loadOp = wgpu::LoadOp::Clear;
-    attachment.storeOp = wgpu::StoreOp::Store;
-    attachment.clearValue = {.r = 0.0f, .g = 0.2f, .b = 0.4f, .a = 1.0f};
-
-    wgpu::RenderPassDepthStencilAttachment depthAttachment{};
-    depthAttachment.view = m_depthTextureView;
-    depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
-    depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
-    depthAttachment.depthClearValue = 1.0f; // Clear to the farthest value
-    depthAttachment.stencilLoadOp = wgpu::LoadOp::Clear;
-    depthAttachment.stencilStoreOp = wgpu::StoreOp::Store;
-
-    wgpu::RenderPassDescriptor renderpass{};
-    renderpass.colorAttachmentCount = 1;
-    renderpass.colorAttachments = &attachment;
-    renderpass.depthStencilAttachment = &depthAttachment;
-
+    // Create command encoder and render pass
     wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
-    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&renderpass);
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&m_renderPassDescriptor);
 
-    // Set global bind group
+    // Set global bind group (group 0)
     pass.SetBindGroup(0, m_globalBindGroup);
 
-    // Render the environment
+    // Render environment background first
     pass.SetPipeline(m_environmentPipeline);
     pass.Draw(3, 1, 0, 0); // Fullscreen triangle
 
@@ -314,9 +302,11 @@ void Renderer::Render(const glm::mat4 &modelMatrix, const CameraUniformsInput &c
     // End the pass
     pass.End();
 
+    // Submit commands
     wgpu::CommandBuffer commands = encoder.Finish();
     m_device.GetQueue().Submit(1, &commands);
 
+    // Present the surface
 #if !defined(__EMSCRIPTEN__)
     m_surface.Present();
     m_instance.ProcessEvents();
@@ -385,6 +375,8 @@ void Renderer::InitGraphics(const Environment &environment, const Model &model, 
     CreateBindGroupLayouts();
 
     CreateSamplers();
+
+    CreateRenderPassDescriptor();
 
     CreateModelRenderPipelines();
     CreateEnvironmentRenderPipeline();
@@ -554,6 +546,27 @@ void Renderer::CreateSamplers()
         samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Nearest;
         m_iblBrdfIntegrationLUTSampler = m_device.CreateSampler(&samplerDescriptor);
     }
+}
+
+void Renderer::CreateRenderPassDescriptor()
+{
+    // Configure color attachment
+    m_colorAttachment.loadOp = wgpu::LoadOp::Clear;
+    m_colorAttachment.storeOp = wgpu::StoreOp::Store;
+    m_colorAttachment.clearValue = {.r = 0.0f, .g = 0.2f, .b = 0.4f, .a = 1.0f};
+
+    // Configure depth attachment
+    m_depthAttachment.view = m_depthTextureView;
+    m_depthAttachment.depthLoadOp = wgpu::LoadOp::Clear;
+    m_depthAttachment.depthStoreOp = wgpu::StoreOp::Store;
+    m_depthAttachment.depthClearValue = 1.0f;
+    m_depthAttachment.stencilLoadOp = wgpu::LoadOp::Clear;
+    m_depthAttachment.stencilStoreOp = wgpu::StoreOp::Store;
+
+    // Initialize render pass descriptor
+    m_renderPassDescriptor.colorAttachmentCount = 1;
+    m_renderPassDescriptor.colorAttachments = &m_colorAttachment;
+    m_renderPassDescriptor.depthStencilAttachment = &m_depthAttachment;
 }
 
 void Renderer::CreateVertexBuffer(const Model &model)
