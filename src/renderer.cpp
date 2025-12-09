@@ -344,16 +344,12 @@ void Renderer::UpdateModel(const Model &model)
     m_indexBuffer = nullptr;
 
     m_sampler = nullptr;
-    m_modelShaderModule = nullptr;
-    m_modelPipelineOpaque = nullptr;
-    m_modelPipelineTransparent = nullptr;
 
     // Create new model resources
     CreateVertexBuffer(model);
     CreateIndexBuffer(model);
     CreateSubMeshes(model);
     CreateMaterials(model);
-    CreateModelRenderPipelines();
 
     auto t1 = std::chrono::high_resolution_clock::now();
     double totalMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -375,13 +371,10 @@ void Renderer::UpdateEnvironment(const Environment &environment)
     m_iblBrdfIntegrationLUTView = nullptr;
     m_environmentCubeSampler = nullptr;
     m_iblBrdfIntegrationLUTSampler = nullptr;
-    m_environmentShaderModule = nullptr;
-    m_environmentPipeline = nullptr;
 
     // Create new environment resources
     CreateEnvironmentTexturesAndSamplers(environment);
     CreateGlobalBindGroup();
-    CreateEnvironmentRenderPipeline();
 
     auto t1 = std::chrono::high_resolution_clock::now();
     double totalMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -394,6 +387,9 @@ void Renderer::InitGraphics(const Environment &environment, const Model &model, 
     CreateDepthTexture(width, height);
 
     CreateBindGroupLayouts();
+
+    CreateModelRenderPipelines();
+    CreateEnvironmentRenderPipeline();
 
     CreateUniformBuffers();
 
