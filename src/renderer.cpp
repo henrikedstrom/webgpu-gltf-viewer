@@ -28,7 +28,6 @@
 #include "application.h"
 #include "environment.h"
 #include "environment_preprocessor.h"
-#include "mipmap_generator.h"
 #include "model.h"
 #include "orbit_controls.h"
 #include "panorama_to_cubemap_converter.h"
@@ -378,6 +377,9 @@ void Renderer::InitGraphics(const Environment &environment, const Model &model, 
 
     CreateRenderPassDescriptor();
 
+    m_mipmapGenerator = std::make_unique<MipmapGenerator>(m_device);
+    CreateDefaultTextures();
+
     CreateModelRenderPipelines();
     CreateEnvironmentRenderPipeline();
 
@@ -388,6 +390,65 @@ void Renderer::InitGraphics(const Environment &environment, const Model &model, 
     UpdateModel(model);
 }
 
+void Renderer::CreateDefaultTextures()
+{
+    // 1x1 white sRGB texture
+    {
+        const uint8_t whitePixel[4] = {255, 255, 255, 255};
+        wgpu::TextureDescriptor desc{};
+        desc.size = {1, 1, 1};
+        desc.format = wgpu::TextureFormat::RGBA8UnormSrgb;
+        desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+        m_defaultSRGBTexture = m_device.CreateTexture(&desc);
+
+        wgpu::ImageCopyTexture dst{};
+        dst.texture = m_defaultSRGBTexture;
+        wgpu::TextureDataLayout layout{};
+        layout.bytesPerRow = 4;
+        wgpu::Extent3D size{1, 1, 1};
+        m_device.GetQueue().WriteTexture(&dst, whitePixel, sizeof(whitePixel), &layout, &size);
+
+        m_defaultSRGBTextureView = m_defaultSRGBTexture.CreateView();
+    }
+
+    // 1x1 white UNORM texture
+    {
+        const uint8_t whitePixel[4] = {255, 255, 255, 255};
+        wgpu::TextureDescriptor desc{};
+        desc.size = {1, 1, 1};
+        desc.format = wgpu::TextureFormat::RGBA8Unorm;
+        desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+        m_defaultUNormTexture = m_device.CreateTexture(&desc);
+
+        wgpu::ImageCopyTexture dst{};
+        dst.texture = m_defaultUNormTexture;
+        wgpu::TextureDataLayout layout{};
+        layout.bytesPerRow = 4;
+        wgpu::Extent3D size{1, 1, 1};
+        m_device.GetQueue().WriteTexture(&dst, whitePixel, sizeof(whitePixel), &layout, &size);
+
+        m_defaultUNormTextureView = m_defaultUNormTexture.CreateView();
+    }
+
+    // 1x1 flat normal (128,128,255,255) UNORM
+    {
+        const uint8_t flatNormal[4] = {128, 128, 255, 255};
+        wgpu::TextureDescriptor desc{};
+        desc.size = {1, 1, 1};
+        desc.format = wgpu::TextureFormat::RGBA8Unorm;
+        desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+        m_defaultNormalTexture = m_device.CreateTexture(&desc);
+
+        wgpu::ImageCopyTexture dst{};
+        dst.texture = m_defaultNormalTexture;
+        wgpu::TextureDataLayout layout{};
+        layout.bytesPerRow = 4;
+        wgpu::Extent3D size{1, 1, 1};
+        m_device.GetQueue().WriteTexture(&dst, flatNormal, sizeof(flatNormal), &layout, &size);
+
+        m_defaultNormalTextureView = m_defaultNormalTexture.CreateView();
+    }
+}
 void Renderer::ConfigureSurface(uint32_t width, uint32_t height)
 {
     wgpu::SurfaceCapabilities capabilities;
@@ -629,8 +690,6 @@ void Renderer::CreateUniformBuffers()
 
 void Renderer::CreateEnvironmentTextures(const Environment &environment)
 {
-    MipmapGenerator mipmapGenerator(m_device);
-
     const Environment::Texture &panoramaTexture = environment.GetTexture();
     uint32_t environmentCubeSize = FloorPow2(panoramaTexture.m_width);
 
@@ -649,14 +708,16 @@ void Renderer::CreateEnvironmentTextures(const Environment &environment)
     // Upload panorama texture and resample to cubemap
     PanoramaToCubemapConverter panoramaToCubemapConverter(m_device);
     panoramaToCubemapConverter.UploadAndConvert(panoramaTexture, m_environmentTexture);
-    mipmapGenerator.GenerateMipmaps(m_environmentTexture, {environmentCubeSize, environmentCubeSize, 6}, MipmapGenerator::MipKind::Float16Cube);
+    m_mipmapGenerator->GenerateMipmaps(m_environmentTexture, {environmentCubeSize, environmentCubeSize, 6},
+                                       MipmapGenerator::MipKind::Float16Cube);
 
     // Precompute IBL maps
     EnvironmentPreprocessor environmentPreprocessor(m_device);
     environmentPreprocessor.GenerateMaps(m_environmentTexture, m_iblIrradianceTexture, m_iblSpecularTexture,
                                          m_iblBrdfIntegrationLUT);
-    mipmapGenerator.GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6}, MipmapGenerator::MipKind::Float16Cube);
 
+    m_mipmapGenerator->GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6},
+                                       MipmapGenerator::MipKind::Float16Cube);
 }
 
 void Renderer::CreateSubMeshes(const Model &model)
@@ -689,8 +750,6 @@ void Renderer::CreateMaterials(const Model &model)
     // Check if the model has any textures
     if (!model.GetMaterials().empty())
     {
-        MipmapGenerator mipmapGenerator(m_device);
-
         m_materials.resize(model.GetMaterials().size());
 
         for (size_t i = 0; i < model.GetMaterials().size(); ++i)
@@ -716,35 +775,65 @@ void Renderer::CreateMaterials(const Model &model)
 
             m_device.GetQueue().WriteBuffer(dstMat.m_uniformBuffer, 0, &dstMat.m_uniforms, sizeof(MaterialUniforms));
 
-            glm::vec4 defaultBaseColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-            glm::vec4 defaultMetallicRoughness = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-            glm::vec4 defaultNormal = glm::vec4(0.5f, 0.5f, 1.0f, 1.0f);
-            glm::vec4 defaultOcculsion = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-            glm::vec4 defaultEmissive = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-
             // Base Color Texture
-            CreateTexture(model.GetTexture(srcMat.m_baseColorTexture), wgpu::TextureFormat::RGBA8UnormSrgb,
-                          defaultBaseColor, m_device, mipmapGenerator, MipmapGenerator::MipKind::SRGB2D, dstMat.m_baseColorTexture,
-                          dstMat.m_baseColorTextureView);
+            if (const Model::Texture* t = model.GetTexture(srcMat.m_baseColorTexture))
+            {
+                glm::vec4 defaultBaseColor(1.0f);
+                CreateTexture(t, wgpu::TextureFormat::RGBA8UnormSrgb, defaultBaseColor, m_device, *m_mipmapGenerator,
+                              MipmapGenerator::MipKind::SRGB2D, dstMat.m_baseColorTexture, dstMat.m_baseColorTextureView);
+            }
+            else
+            {
+                dstMat.m_baseColorTextureView = m_defaultSRGBTextureView;
+            }
 
             // Metallic-Roughness
-            CreateTexture(model.GetTexture(srcMat.m_metallicRoughnessTexture), wgpu::TextureFormat::RGBA8Unorm,
-                          defaultMetallicRoughness, m_device, mipmapGenerator, MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_metallicRoughnessTexture,
-                          dstMat.m_metallicRoughnessTextureView);
+            if (const Model::Texture* t = model.GetTexture(srcMat.m_metallicRoughnessTexture))
+            {
+                glm::vec4 defaultMR(1.0f);
+                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultMR, m_device, *m_mipmapGenerator,
+                              MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_metallicRoughnessTexture, dstMat.m_metallicRoughnessTextureView);
+            }
+            else
+            {
+                dstMat.m_metallicRoughnessTextureView = m_defaultUNormTextureView;
+            }
 
             // Normal Texture
-            CreateTexture(model.GetTexture(srcMat.m_normalTexture), wgpu::TextureFormat::RGBA8Unorm, defaultNormal,
-                          m_device, mipmapGenerator, MipmapGenerator::MipKind::Normal2D, dstMat.m_normalTexture, dstMat.m_normalTextureView);
+            if (const Model::Texture* t = model.GetTexture(srcMat.m_normalTexture))
+            {
+                glm::vec4 defaultNormal(0.5f, 0.5f, 1.0f, 1.0f);
+                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultNormal, m_device, *m_mipmapGenerator,
+                              MipmapGenerator::MipKind::Normal2D, dstMat.m_normalTexture, dstMat.m_normalTextureView);
+            }
+            else
+            {
+                dstMat.m_normalTextureView = m_defaultNormalTextureView;
+            }
 
             // Occlusion Texture
-            CreateTexture(model.GetTexture(srcMat.m_occlusionTexture), wgpu::TextureFormat::RGBA8Unorm,
-                          defaultOcculsion, m_device, mipmapGenerator, MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_occlusionTexture,
-                          dstMat.m_occlusionTextureView);
+            if (const Model::Texture* t = model.GetTexture(srcMat.m_occlusionTexture))
+            {
+                glm::vec4 defaultOcc(1.0f);
+                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultOcc, m_device, *m_mipmapGenerator,
+                              MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_occlusionTexture, dstMat.m_occlusionTextureView);
+            }
+            else
+            {
+                dstMat.m_occlusionTextureView = m_defaultUNormTextureView;
+            }
 
             // Emissive Texture
-            CreateTexture(model.GetTexture(srcMat.m_emissiveTexture), wgpu::TextureFormat::RGBA8UnormSrgb,
-                          defaultEmissive, m_device, mipmapGenerator, MipmapGenerator::MipKind::SRGB2D, dstMat.m_emissiveTexture,
-                          dstMat.m_emissiveTextureView);
+            if (const Model::Texture* t = model.GetTexture(srcMat.m_emissiveTexture))
+            {
+                glm::vec4 defaultEmissive(1.0f);
+                CreateTexture(t, wgpu::TextureFormat::RGBA8UnormSrgb, defaultEmissive, m_device, *m_mipmapGenerator,
+                              MipmapGenerator::MipKind::SRGB2D, dstMat.m_emissiveTexture, dstMat.m_emissiveTextureView);
+            }
+            else
+            {
+                dstMat.m_emissiveTextureView = m_defaultSRGBTextureView;
+            }
 
             // Create bind group
             wgpu::BindGroupEntry bindGroupEntries[8]{};
@@ -857,7 +946,7 @@ void Renderer::CreateModelRenderPipelines()
     wgpu::DepthStencilState depthStencilState{};
     depthStencilState.format = wgpu::TextureFormat::Depth24PlusStencil8;
     depthStencilState.depthWriteEnabled = true;
-    depthStencilState.depthCompare = wgpu::CompareFunction::Less;
+    depthStencilState.depthCompare = wgpu::CompareFunction::LessEqual;
 
     wgpu::BindGroupLayout bindGroupLayouts[] = {m_globalBindGroupLayout, m_modelBindGroupLayout};
 

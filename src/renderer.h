@@ -10,6 +10,9 @@
 #include <glm/glm.hpp>
 #include <webgpu/webgpu_cpp.h>
 
+// Project Headers
+#include "mipmap_generator.h"
+
 // Forward Declarations
 class Environment;
 class Model;
@@ -62,6 +65,7 @@ class Renderer
     void CreateEnvironmentRenderPipeline();
     void CreateModelRenderPipelines();
     void CreateRenderPassDescriptor();
+    void CreateDefaultTextures();
     void UpdateUniforms(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera) const;
     void SortTransparentMeshes(const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix);
     void GetAdapter(const std::function<void(wgpu::Adapter)> &callback);
@@ -163,6 +167,15 @@ class Renderer
     wgpu::Buffer m_indexBuffer;
     wgpu::Buffer m_modelUniformBuffer;
     wgpu::Sampler m_sampler;
+
+    // Persistent helpers and default textures
+    std::unique_ptr<MipmapGenerator> m_mipmapGenerator;
+    wgpu::Texture m_defaultSRGBTexture;
+    wgpu::TextureView m_defaultSRGBTextureView;
+    wgpu::Texture m_defaultUNormTexture;
+    wgpu::TextureView m_defaultUNormTextureView;
+    wgpu::Texture m_defaultNormalTexture;
+    wgpu::TextureView m_defaultNormalTextureView;
 
     std::vector<SubMesh> m_opaqueMeshes;
     std::vector<SubMesh> m_transparentMeshes;
