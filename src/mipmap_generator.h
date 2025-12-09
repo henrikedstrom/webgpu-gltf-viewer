@@ -66,7 +66,6 @@ class MipmapGenerator
     // Render path for sRGB 2D
     wgpu::BindGroupLayout m_renderBindGroupLayout;
     wgpu::RenderPipeline m_renderPipelineSRGB2D;
-    wgpu::Sampler m_renderSampler;
     wgpu::TextureFormat m_renderColorFormatSRGB = wgpu::TextureFormat::RGBA8UnormSrgb;
 
     wgpu::Buffer m_uniformBuffers[6];

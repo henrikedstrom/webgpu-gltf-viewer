@@ -195,20 +195,16 @@ wgpu::RenderPipeline MipmapGenerator::createRenderPipeline(const std::string &sh
     shaderModuleDescriptor.nextInChain = &wgslDesc;
     wgpu::ShaderModule shaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
-    // Bind group layout: sampler + sampled texture
-    wgpu::BindGroupLayoutEntry entries[2]{};
+    // Bind group layout: texture only (using textureLoad, no sampler needed)
+    wgpu::BindGroupLayoutEntry entries[1]{};
     entries[0].binding = 0;
     entries[0].visibility = wgpu::ShaderStage::Fragment;
-    entries[0].sampler.type = wgpu::SamplerBindingType::Filtering;
-
-    entries[1].binding = 1;
-    entries[1].visibility = wgpu::ShaderStage::Fragment;
-    entries[1].texture.sampleType = wgpu::TextureSampleType::Float;
-    entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
-    entries[1].texture.multisampled = false;
+    entries[0].texture.sampleType = wgpu::TextureSampleType::Float;
+    entries[0].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+    entries[0].texture.multisampled = false;
 
     wgpu::BindGroupLayoutDescriptor bglDesc{};
-    bglDesc.entryCount = 2;
+    bglDesc.entryCount = 1;
     bglDesc.entries = entries;
     m_renderBindGroupLayout = m_device.CreateBindGroupLayout(&bglDesc);
 
@@ -241,16 +237,6 @@ wgpu::RenderPipeline MipmapGenerator::createRenderPipeline(const std::string &sh
 
 void MipmapGenerator::initRenderPipeline()
 {
-    // Sampler for render downsample
-    wgpu::SamplerDescriptor sd{};
-    sd.addressModeU = wgpu::AddressMode::ClampToEdge;
-    sd.addressModeV = wgpu::AddressMode::ClampToEdge;
-    sd.addressModeW = wgpu::AddressMode::ClampToEdge;
-    sd.minFilter = wgpu::FilterMode::Linear;
-    sd.magFilter = wgpu::FilterMode::Linear;
-    sd.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-    m_renderSampler = m_device.CreateSampler(&sd);
-
     // Create render pipeline targeting sRGB RGBA8 color
     m_renderPipelineSRGB2D = createRenderPipeline("./assets/shaders/mipmap_downsample_render.wgsl",
                                                   m_renderColorFormatSRGB);
@@ -400,16 +386,14 @@ void MipmapGenerator::generate2DRenderSRGB(const wgpu::Texture &texture, wgpu::E
         nextDesc.baseMipLevel = nextLevel;
         wgpu::TextureView nextView = texture.CreateView(&nextDesc);
 
-        // Create bind group for prev level
-        wgpu::BindGroupEntry entries[2]{};
+        // Create bind group for prev level (texture only, using textureLoad)
+        wgpu::BindGroupEntry entries[1]{};
         entries[0].binding = 0;
-        entries[0].sampler = m_renderSampler;
-        entries[1].binding = 1;
-        entries[1].textureView = prevView;
+        entries[0].textureView = prevView;
 
         wgpu::BindGroupDescriptor bgd{};
         bgd.layout = m_renderBindGroupLayout;
-        bgd.entryCount = 2;
+        bgd.entryCount = 1;
         bgd.entries = entries;
         wgpu::BindGroup bindGroup = m_device.CreateBindGroup(&bgd);
 

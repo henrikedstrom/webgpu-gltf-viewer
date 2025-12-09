@@ -10,8 +10,7 @@
 // Bind Group Declarations
 //=========================================================
 
-@group(0) @binding(0) var prevSampler: sampler;
-@group(0) @binding(1) var prevTexture: texture_2d<f32>;
+@group(0) @binding(0) var prevTexture: texture_2d<f32>;
 
 
 //=========================================================
@@ -57,16 +56,24 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   // Manual 2x2 PMA box filter to handle straight alpha inputs (glTF typical).
-  // Sample previous mip level (L-1) in linear (HW sRGB decode).
-  let size    = vec2<f32>(textureDimensions(prevTexture, 0));
-  let texel   = 1.0 / size;
-  let o       = vec2<f32>(0.25) * texel;
+  // Use textureLoad to get exact texel values without sampler filtering.
+  let prevSize = vec2<i32>(textureDimensions(prevTexture, 0));
+  
+  // Convert fragment position to integer pixel coordinates in output mip
+  // The viewport is set to the output mip size, so position.xy is the pixel coordinate
+  let outputCoord = vec2<i32>(i32(in.pos.x), i32(in.pos.y));
+  
+  // Calculate the 2x2 block coordinates in the previous mip level
+  let baseCoord = 2i * outputCoord;
+  
+  // Sample the 4 texels using textureLoad (exact values, no filtering)
+  // textureLoad on sRGB texture view returns linear values (GPU auto-decodes sRGB)
+  let s0 = textureLoad(prevTexture, baseCoord + vec2<i32>(0, 0), 0);
+  let s1 = textureLoad(prevTexture, baseCoord + vec2<i32>(1, 0), 0);
+  let s2 = textureLoad(prevTexture, baseCoord + vec2<i32>(0, 1), 0);
+  let s3 = textureLoad(prevTexture, baseCoord + vec2<i32>(1, 1), 0);
 
-  let s0 = textureSampleLevel(prevTexture, prevSampler, in.uv + vec2<f32>(-o.x, -o.y), 0.0);
-  let s1 = textureSampleLevel(prevTexture, prevSampler, in.uv + vec2<f32>( o.x, -o.y), 0.0);
-  let s2 = textureSampleLevel(prevTexture, prevSampler, in.uv + vec2<f32>(-o.x,  o.y), 0.0);
-  let s3 = textureSampleLevel(prevTexture, prevSampler, in.uv + vec2<f32>( o.x,  o.y), 0.0);
-
+  // Premultiplied alpha box filter in linear space
   let alphaSum = s0.a + s1.a + s2.a + s3.a;
   let alpha    = 0.25 * alphaSum;
 
@@ -74,6 +81,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let invAlpha = 1.0 / max(alphaSum, kAlphaEpsilon);
   let rgb = select(colorPremul * invAlpha, vec3<f32>(0.0), alphaSum <= kAlphaEpsilon);
 
+  // Return in linear space - the render target's sRGB format will encode it back to sRGB
   return vec4<f32>(rgb, alpha);
 }
 
