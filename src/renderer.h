@@ -167,7 +167,7 @@ class Renderer
     wgpu::Buffer m_vertexBuffer;
     wgpu::Buffer m_indexBuffer;
     wgpu::Buffer m_modelUniformBuffer;
-    wgpu::Sampler m_sampler;
+    wgpu::Sampler m_modelTextureSampler;
 
     // Default textures
     wgpu::Texture m_defaultSRGBTexture;

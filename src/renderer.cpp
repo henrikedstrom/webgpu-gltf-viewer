@@ -571,7 +571,7 @@ void Renderer::CreateBindGroupLayouts()
 void Renderer::CreateSamplers()
 {
     // Model textures sampler
-    if (!m_sampler)
+    if (!m_modelTextureSampler)
     {
         wgpu::SamplerDescriptor samplerDescriptor{};
         samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
@@ -580,7 +580,7 @@ void Renderer::CreateSamplers()
         samplerDescriptor.minFilter = wgpu::FilterMode::Linear;
         samplerDescriptor.magFilter = wgpu::FilterMode::Linear;
         samplerDescriptor.mipmapFilter = wgpu::MipmapFilterMode::Linear;
-        m_sampler = m_device.CreateSampler(&samplerDescriptor);
+        m_modelTextureSampler = m_device.CreateSampler(&samplerDescriptor);
     }
 
     // Environment cube sampler
@@ -855,7 +855,7 @@ void Renderer::CreateMaterials(const Model &model)
             bindGroupEntries[1].size = sizeof(MaterialUniforms);
 
             bindGroupEntries[2].binding = 2;
-            bindGroupEntries[2].sampler = m_sampler;
+            bindGroupEntries[2].sampler = m_modelTextureSampler;
 
             bindGroupEntries[3].binding = 3;
             bindGroupEntries[3].textureView = dstMat.m_baseColorTextureView;
