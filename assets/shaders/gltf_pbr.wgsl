@@ -356,5 +356,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Final color output
     color = toneMap(color);
 
-    return vec4f(color, baseColor.a);
+    // Select alpha: Opaque forces 1.0, Mask/Blend use factored alpha (baseColor.a)
+    var alpha = select(materialInfo.baseColor.a, 1.0, materialUniforms.alphaMode == 0); 
+    return vec4f(color, alpha);
 }

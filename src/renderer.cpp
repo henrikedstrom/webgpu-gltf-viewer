@@ -449,6 +449,7 @@ void Renderer::CreateDefaultTextures()
         m_defaultNormalTextureView = m_defaultNormalTexture.CreateView();
     }
 }
+
 void Renderer::ConfigureSurface(uint32_t width, uint32_t height)
 {
     wgpu::SurfaceCapabilities capabilities;
@@ -998,7 +999,7 @@ void Renderer::CreateEnvironmentRenderPipeline()
     wgpu::DepthStencilState depthStencilState{};
     depthStencilState.format = wgpu::TextureFormat::Depth24PlusStencil8;
     depthStencilState.depthWriteEnabled = true;
-    depthStencilState.depthCompare = wgpu::CompareFunction::Less;
+    depthStencilState.depthCompare = wgpu::CompareFunction::LessEqual;
 
     // Create an environment pipeline
     wgpu::ShaderModuleWGSLDescriptor environmentWgslDesc{};
