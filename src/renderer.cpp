@@ -54,8 +54,7 @@ int FloorPow2(int x)
 
 template <typename TextureInfo>
 void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, glm::vec4 defaultValue,
-                   wgpu::Device device, MipmapGenerator &mipmapGenerator, MipmapGenerator::MipKind kind, wgpu::Texture &texture,
-                   wgpu::TextureView &textureView)
+                   wgpu::Device device, MipmapGenerator &mipmapGenerator, MipmapGenerator::MipKind kind, wgpu::Texture &texture)
 {
     // Set default pixel value
     const uint8_t defaultPixel[4] = {
@@ -164,14 +163,6 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format, g
         texture = finalTexture;
     }
 
-    // Create a texture view covering all mip levels
-    wgpu::TextureViewDescriptor viewDescriptor{};
-    viewDescriptor.format = format;
-    viewDescriptor.dimension = wgpu::TextureViewDimension::e2D;
-    viewDescriptor.mipLevelCount = mipLevelCount;
-    viewDescriptor.arrayLayerCount = 1;
-
-    textureView = texture.CreateView(&viewDescriptor);
 }
 
 void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension type, wgpu::Extent3D size,
@@ -447,6 +438,35 @@ void Renderer::CreateDefaultTextures()
         m_device.GetQueue().WriteTexture(&dst, flatNormal, sizeof(flatNormal), &layout, &size);
 
         m_defaultNormalTextureView = m_defaultNormalTexture.CreateView();
+    }
+
+    // 1x1x6 white cube texture (environment fallback)
+    {
+        const uint8_t whitePixel[4] = {255, 255, 255, 255};
+        wgpu::TextureDescriptor desc{};
+        desc.size = {1, 1, 6};
+        desc.format = wgpu::TextureFormat::RGBA8Unorm;
+        desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+        m_defaultCubeTexture = m_device.CreateTexture(&desc);
+
+        wgpu::ImageCopyTexture dst{};
+        dst.texture = m_defaultCubeTexture;
+        wgpu::TextureDataLayout layout{};
+        layout.bytesPerRow = 4;
+        wgpu::Extent3D size{1, 1, 1};
+        
+        // Write white pixel to each face of the cubemap
+        for (uint32_t face = 0; face < 6; ++face)
+        {
+            dst.origin = {0, 0, face};
+            m_device.GetQueue().WriteTexture(&dst, whitePixel, sizeof(whitePixel), &layout, &size);
+        }
+
+        wgpu::TextureViewDescriptor viewDesc{};
+        viewDesc.format = wgpu::TextureFormat::RGBA8Unorm;
+        viewDesc.dimension = wgpu::TextureViewDimension::Cube;
+        viewDesc.arrayLayerCount = 6;
+        m_defaultCubeTextureView = m_defaultCubeTexture.CreateView(&viewDesc);
     }
 }
 
@@ -787,11 +807,11 @@ void Renderer::CreateMaterials(const Model &model)
             {
                 glm::vec4 defaultBaseColor(1.0f);
                 CreateTexture(t, wgpu::TextureFormat::RGBA8UnormSrgb, defaultBaseColor, m_device, mipmapGenerator,
-                              MipmapGenerator::MipKind::SRGB2D, dstMat.m_baseColorTexture, dstMat.m_baseColorTextureView);
+                              MipmapGenerator::MipKind::SRGB2D, dstMat.m_baseColorTexture);
             }
             else
             {
-                dstMat.m_baseColorTextureView = m_defaultSRGBTextureView;
+                dstMat.m_baseColorTexture = m_defaultSRGBTexture;
             }
 
             // Metallic-Roughness
@@ -799,11 +819,11 @@ void Renderer::CreateMaterials(const Model &model)
             {
                 glm::vec4 defaultMR(1.0f);
                 CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultMR, m_device, mipmapGenerator,
-                              MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_metallicRoughnessTexture, dstMat.m_metallicRoughnessTextureView);
+                              MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_metallicRoughnessTexture);
             }
             else
             {
-                dstMat.m_metallicRoughnessTextureView = m_defaultUNormTextureView;
+                dstMat.m_metallicRoughnessTexture = m_defaultUNormTexture;
             }
 
             // Normal Texture
@@ -811,11 +831,11 @@ void Renderer::CreateMaterials(const Model &model)
             {
                 glm::vec4 defaultNormal(0.5f, 0.5f, 1.0f, 1.0f);
                 CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultNormal, m_device, mipmapGenerator,
-                              MipmapGenerator::MipKind::Normal2D, dstMat.m_normalTexture, dstMat.m_normalTextureView);
+                              MipmapGenerator::MipKind::Normal2D, dstMat.m_normalTexture);
             }
             else
             {
-                dstMat.m_normalTextureView = m_defaultNormalTextureView;
+                dstMat.m_normalTexture = m_defaultNormalTexture;
             }
 
             // Occlusion Texture
@@ -823,11 +843,11 @@ void Renderer::CreateMaterials(const Model &model)
             {
                 glm::vec4 defaultOcc(1.0f);
                 CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultOcc, m_device, mipmapGenerator,
-                              MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_occlusionTexture, dstMat.m_occlusionTextureView);
+                              MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_occlusionTexture);
             }
             else
             {
-                dstMat.m_occlusionTextureView = m_defaultUNormTextureView;
+                dstMat.m_occlusionTexture = m_defaultUNormTexture;
             }
 
             // Emissive Texture
@@ -835,11 +855,11 @@ void Renderer::CreateMaterials(const Model &model)
             {
                 glm::vec4 defaultEmissive(1.0f);
                 CreateTexture(t, wgpu::TextureFormat::RGBA8UnormSrgb, defaultEmissive, m_device, mipmapGenerator,
-                              MipmapGenerator::MipKind::SRGB2D, dstMat.m_emissiveTexture, dstMat.m_emissiveTextureView);
+                              MipmapGenerator::MipKind::SRGB2D, dstMat.m_emissiveTexture);
             }
             else
             {
-                dstMat.m_emissiveTextureView = m_defaultSRGBTextureView;
+                dstMat.m_emissiveTexture = m_defaultSRGBTexture;
             }
 
             // Create bind group
@@ -858,19 +878,19 @@ void Renderer::CreateMaterials(const Model &model)
             bindGroupEntries[2].sampler = m_modelTextureSampler;
 
             bindGroupEntries[3].binding = 3;
-            bindGroupEntries[3].textureView = dstMat.m_baseColorTextureView;
+            bindGroupEntries[3].textureView = dstMat.m_baseColorTexture.CreateView();
 
             bindGroupEntries[4].binding = 4;
-            bindGroupEntries[4].textureView = dstMat.m_metallicRoughnessTextureView;
+            bindGroupEntries[4].textureView = dstMat.m_metallicRoughnessTexture.CreateView();
 
             bindGroupEntries[5].binding = 5;
-            bindGroupEntries[5].textureView = dstMat.m_normalTextureView;
+            bindGroupEntries[5].textureView = dstMat.m_normalTexture.CreateView();
 
             bindGroupEntries[6].binding = 6;
-            bindGroupEntries[6].textureView = dstMat.m_occlusionTextureView;
+            bindGroupEntries[6].textureView = dstMat.m_occlusionTexture.CreateView();
 
             bindGroupEntries[7].binding = 7;
-            bindGroupEntries[7].textureView = dstMat.m_emissiveTextureView;
+            bindGroupEntries[7].textureView = dstMat.m_emissiveTexture.CreateView();
 
             wgpu::BindGroupDescriptor bindGroupDescriptor{};
             bindGroupDescriptor.layout = m_modelBindGroupLayout;
@@ -893,17 +913,18 @@ void Renderer::CreateGlobalBindGroup()
     bindGroupEntries[1].binding = 1;
     bindGroupEntries[1].sampler = m_environmentCubeSampler;
 
+    // Use environment resources if available, otherwise use fallbacks
     bindGroupEntries[2].binding = 2;
-    bindGroupEntries[2].textureView = m_environmentTextureView;
+    bindGroupEntries[2].textureView = m_environmentTextureView ? m_environmentTextureView : m_defaultCubeTextureView;
 
     bindGroupEntries[3].binding = 3;
-    bindGroupEntries[3].textureView = m_iblIrradianceTextureView;
+    bindGroupEntries[3].textureView = m_iblIrradianceTextureView ? m_iblIrradianceTextureView : m_defaultCubeTextureView;
 
     bindGroupEntries[4].binding = 4;
-    bindGroupEntries[4].textureView = m_iblSpecularTextureView;
+    bindGroupEntries[4].textureView = m_iblSpecularTextureView ? m_iblSpecularTextureView : m_defaultCubeTextureView;
 
     bindGroupEntries[5].binding = 5;
-    bindGroupEntries[5].textureView = m_iblBrdfIntegrationLUTView;
+    bindGroupEntries[5].textureView = m_iblBrdfIntegrationLUTView ? m_iblBrdfIntegrationLUTView : m_defaultUNormTextureView;
 
     bindGroupEntries[6].binding = 6;
     bindGroupEntries[6].sampler = m_iblBrdfIntegrationLUTSampler;

@@ -103,16 +103,10 @@ class Renderer
       MaterialUniforms m_uniforms;
       wgpu::Buffer m_uniformBuffer;
       wgpu::Texture m_baseColorTexture;
-      wgpu::TextureView m_baseColorTextureView;
       wgpu::Texture m_metallicRoughnessTexture;
-      wgpu::TextureView m_metallicRoughnessTextureView;
       wgpu::Texture m_normalTexture;
-      wgpu::TextureView m_normalTextureView;
       wgpu::Texture m_occlusionTexture;
-      wgpu::TextureView m_occlusionTextureView;
       wgpu::Texture m_emissiveTexture;
-      wgpu::TextureView m_emissiveTextureView;
-      wgpu::TextureView m_textureView;
       wgpu::BindGroup m_bindGroup;
     };
 
@@ -176,6 +170,8 @@ class Renderer
     wgpu::TextureView m_defaultUNormTextureView;
     wgpu::Texture m_defaultNormalTexture;
     wgpu::TextureView m_defaultNormalTextureView;
+    wgpu::Texture m_defaultCubeTexture;
+    wgpu::TextureView m_defaultCubeTextureView;
 
     std::vector<SubMesh> m_opaqueMeshes;
     std::vector<SubMesh> m_transparentMeshes;
