@@ -28,6 +28,7 @@
 #include "application.h"
 #include "environment.h"
 #include "environment_preprocessor.h"
+#include "mipmap_generator.h"
 #include "model.h"
 #include "orbit_controls.h"
 #include "panorama_to_cubemap_converter.h"
@@ -377,7 +378,6 @@ void Renderer::InitGraphics(const Environment &environment, const Model &model, 
 
     CreateRenderPassDescriptor();
 
-    m_mipmapGenerator = std::make_unique<MipmapGenerator>(m_device);
     CreateDefaultTextures();
 
     CreateModelRenderPipelines();
@@ -694,6 +694,11 @@ void Renderer::CreateEnvironmentTextures(const Environment &environment)
     const Environment::Texture &panoramaTexture = environment.GetTexture();
     uint32_t environmentCubeSize = FloorPow2(panoramaTexture.m_width);
 
+    // Create helpers
+    MipmapGenerator mipmapGenerator(m_device);
+    PanoramaToCubemapConverter panoramaToCubemapConverter(m_device);
+    EnvironmentPreprocessor environmentPreprocessor(m_device);
+
     // Create IBL textures
     CreateEnvironmentTexture(m_device, wgpu::TextureViewDimension::Cube, {environmentCubeSize, environmentCubeSize, 6},
                              true, m_environmentTexture, m_environmentTextureView);
@@ -707,18 +712,16 @@ void Renderer::CreateEnvironmentTextures(const Environment &environment)
                              m_iblBrdfIntegrationLUT, m_iblBrdfIntegrationLUTView);
 
     // Upload panorama texture and resample to cubemap
-    PanoramaToCubemapConverter panoramaToCubemapConverter(m_device);
     panoramaToCubemapConverter.UploadAndConvert(panoramaTexture, m_environmentTexture);
-    m_mipmapGenerator->GenerateMipmaps(m_environmentTexture, {environmentCubeSize, environmentCubeSize, 6},
-                                       MipmapGenerator::MipKind::Float16Cube);
+    mipmapGenerator.GenerateMipmaps(m_environmentTexture, {environmentCubeSize, environmentCubeSize, 6},
+                                     MipmapGenerator::MipKind::Float16Cube);
 
     // Precompute IBL maps
-    EnvironmentPreprocessor environmentPreprocessor(m_device);
     environmentPreprocessor.GenerateMaps(m_environmentTexture, m_iblIrradianceTexture, m_iblSpecularTexture,
                                          m_iblBrdfIntegrationLUT);
 
-    m_mipmapGenerator->GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6},
-                                       MipmapGenerator::MipKind::Float16Cube);
+    mipmapGenerator.GenerateMipmaps(m_iblIrradianceTexture, {kIrradianceMapSize, kIrradianceMapSize, 6},
+                                    MipmapGenerator::MipKind::Float16Cube);
 }
 
 void Renderer::CreateSubMeshes(const Model &model)
@@ -746,6 +749,9 @@ void Renderer::CreateSubMeshes(const Model &model)
 
 void Renderer::CreateMaterials(const Model &model)
 {
+    // Create mipmap generator helper
+    MipmapGenerator mipmapGenerator(m_device);
+
     m_materials.clear();
 
     // Check if the model has any textures
@@ -780,7 +786,7 @@ void Renderer::CreateMaterials(const Model &model)
             if (const Model::Texture* t = model.GetTexture(srcMat.m_baseColorTexture))
             {
                 glm::vec4 defaultBaseColor(1.0f);
-                CreateTexture(t, wgpu::TextureFormat::RGBA8UnormSrgb, defaultBaseColor, m_device, *m_mipmapGenerator,
+                CreateTexture(t, wgpu::TextureFormat::RGBA8UnormSrgb, defaultBaseColor, m_device, mipmapGenerator,
                               MipmapGenerator::MipKind::SRGB2D, dstMat.m_baseColorTexture, dstMat.m_baseColorTextureView);
             }
             else
@@ -792,7 +798,7 @@ void Renderer::CreateMaterials(const Model &model)
             if (const Model::Texture* t = model.GetTexture(srcMat.m_metallicRoughnessTexture))
             {
                 glm::vec4 defaultMR(1.0f);
-                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultMR, m_device, *m_mipmapGenerator,
+                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultMR, m_device, mipmapGenerator,
                               MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_metallicRoughnessTexture, dstMat.m_metallicRoughnessTextureView);
             }
             else
@@ -804,7 +810,7 @@ void Renderer::CreateMaterials(const Model &model)
             if (const Model::Texture* t = model.GetTexture(srcMat.m_normalTexture))
             {
                 glm::vec4 defaultNormal(0.5f, 0.5f, 1.0f, 1.0f);
-                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultNormal, m_device, *m_mipmapGenerator,
+                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultNormal, m_device, mipmapGenerator,
                               MipmapGenerator::MipKind::Normal2D, dstMat.m_normalTexture, dstMat.m_normalTextureView);
             }
             else
@@ -816,7 +822,7 @@ void Renderer::CreateMaterials(const Model &model)
             if (const Model::Texture* t = model.GetTexture(srcMat.m_occlusionTexture))
             {
                 glm::vec4 defaultOcc(1.0f);
-                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultOcc, m_device, *m_mipmapGenerator,
+                CreateTexture(t, wgpu::TextureFormat::RGBA8Unorm, defaultOcc, m_device, mipmapGenerator,
                               MipmapGenerator::MipKind::LinearUNorm2D, dstMat.m_occlusionTexture, dstMat.m_occlusionTextureView);
             }
             else
@@ -828,7 +834,7 @@ void Renderer::CreateMaterials(const Model &model)
             if (const Model::Texture* t = model.GetTexture(srcMat.m_emissiveTexture))
             {
                 glm::vec4 defaultEmissive(1.0f);
-                CreateTexture(t, wgpu::TextureFormat::RGBA8UnormSrgb, defaultEmissive, m_device, *m_mipmapGenerator,
+                CreateTexture(t, wgpu::TextureFormat::RGBA8UnormSrgb, defaultEmissive, m_device, mipmapGenerator,
                               MipmapGenerator::MipKind::SRGB2D, dstMat.m_emissiveTexture, dstMat.m_emissiveTextureView);
             }
             else

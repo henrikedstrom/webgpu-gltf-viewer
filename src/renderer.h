@@ -10,8 +10,6 @@
 #include <glm/glm.hpp>
 #include <webgpu/webgpu_cpp.h>
 
-// Project Headers
-#include "mipmap_generator.h"
 
 // Forward Declarations
 class Environment;
@@ -130,7 +128,7 @@ class Renderer
       uint32_t m_meshIndex = 0;
     };
 
-    // WebGPU variables
+    // WebGPU resources
     wgpu::Instance m_instance;
     wgpu::Adapter m_adapter;
     wgpu::Device m_device;
@@ -138,6 +136,9 @@ class Renderer
     wgpu::TextureFormat m_surfaceFormat;
     wgpu::Texture m_depthTexture;
     wgpu::TextureView m_depthTextureView;
+    wgpu::RenderPassDescriptor m_renderPassDescriptor{};
+    wgpu::RenderPassColorAttachment m_colorAttachment{};
+    wgpu::RenderPassDepthStencilAttachment m_depthAttachment{};
 
     // Global data
     wgpu::Buffer m_globalUniformBuffer;
@@ -168,8 +169,7 @@ class Renderer
     wgpu::Buffer m_modelUniformBuffer;
     wgpu::Sampler m_sampler;
 
-    // Persistent helpers and default textures
-    std::unique_ptr<MipmapGenerator> m_mipmapGenerator;
+    // Default textures
     wgpu::Texture m_defaultSRGBTexture;
     wgpu::TextureView m_defaultSRGBTextureView;
     wgpu::Texture m_defaultUNormTexture;
@@ -182,8 +182,4 @@ class Renderer
     std::vector<Material> m_materials;
 
     std::vector<SubMeshDepthInfo> m_transparentMeshesDepthSorted;
-
-    wgpu::RenderPassDescriptor m_renderPassDescriptor{};
-    wgpu::RenderPassColorAttachment m_colorAttachment{};
-    wgpu::RenderPassDepthStencilAttachment m_depthAttachment{};
 };
