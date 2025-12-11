@@ -1,5 +1,6 @@
 // Standard Library Headers
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <cctype>
 
@@ -233,8 +234,29 @@ void Application::MainLoop()
 
 void Application::ProcessFrame()
 {
+    // Calculate deltaTime in milliseconds
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float deltaTime = 16.67f; // Default to ~60 FPS (16.67ms)
+    
+    if (m_hasLastTime)
+    {
+        auto delta = std::chrono::duration_cast<std::chrono::microseconds>(currentTime - m_lastTime);
+        deltaTime = delta.count() / 1000.0f; // Convert microseconds to milliseconds
+        
+        // Clamp deltaTime to reasonable bounds (0-100ms) to handle frame drops
+        if (deltaTime <= 0.0f || deltaTime > 100.0f)
+        {
+            deltaTime = 16.67f;
+        }
+    }
+    m_lastTime = currentTime;
+    m_hasLastTime = true;
+    
+    // Convert milliseconds to seconds for model update
+    float deltaTimeSeconds = deltaTime * 0.001f;
+    
     // Animate the model (if enabled)
-    m_model.Update(0.01f, m_animateModel);
+    m_model.Update(deltaTimeSeconds, m_animateModel);
 
     // Render a frame
     Renderer::CameraUniformsInput cameraInput{

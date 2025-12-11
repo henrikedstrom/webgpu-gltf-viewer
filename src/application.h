@@ -1,6 +1,7 @@
 #pragma once
 
 // Standard Library Headers
+#include <chrono>
 #include <cstdint>
 #include <memory>
 
@@ -58,4 +59,8 @@ class Application
     Renderer m_renderer;
 
     std::unique_ptr<OrbitControls> m_controls;
+    
+    // Frame timing
+    std::chrono::high_resolution_clock::time_point m_lastTime;
+    bool m_hasLastTime = false;
 };
