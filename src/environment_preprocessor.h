@@ -1,5 +1,5 @@
 /// @file   environment_preprocessor.h
-/// @brief  Provides a helper class for generating IBL maps (irradiance, specular, BRDF LUT) 
+/// @brief  Provides a helper class for generating IBL maps (irradiance, specular, BRDF LUT)
 ///         from an environment cube map.
 
 #pragma once
@@ -14,24 +14,23 @@
 /// This class encapsulates WebGPU pipelines and resources to generate
 /// various IBL maps (irradiance, prefiltered specular, and BRDF LUT)
 /// from a given environment cube map.
-class EnvironmentPreprocessor
-{
+class EnvironmentPreprocessor {
   public:
     // Constructor
-    explicit EnvironmentPreprocessor(const wgpu::Device &device);
+    explicit EnvironmentPreprocessor(const wgpu::Device& device);
 
     // Destructor
     ~EnvironmentPreprocessor() = default;
 
     // Rule of 5
-    EnvironmentPreprocessor(const EnvironmentPreprocessor &) = delete;
-    EnvironmentPreprocessor &operator=(const EnvironmentPreprocessor &) = delete;
-    EnvironmentPreprocessor(EnvironmentPreprocessor &&) noexcept = default;
-    EnvironmentPreprocessor &operator=(EnvironmentPreprocessor &&) noexcept = default;
+    EnvironmentPreprocessor(const EnvironmentPreprocessor&) = delete;
+    EnvironmentPreprocessor& operator=(const EnvironmentPreprocessor&) = delete;
+    EnvironmentPreprocessor(EnvironmentPreprocessor&&) noexcept = default;
+    EnvironmentPreprocessor& operator=(EnvironmentPreprocessor&&) noexcept = default;
 
     // Public Interface
-    void GenerateMaps(const wgpu::Texture &environmentCubemap, wgpu::Texture &irradianceCubemap,
-                      wgpu::Texture &prefilteredSpecularCubemap, wgpu::Texture &brdfIntegrationLUT);
+    void GenerateMaps(const wgpu::Texture& environmentCubemap, wgpu::Texture& irradianceCubemap,
+                      wgpu::Texture& prefilteredSpecularCubemap, wgpu::Texture& brdfIntegrationLUT);
 
   private:
     // Pipeline initialization
@@ -42,9 +41,10 @@ class EnvironmentPreprocessor
     void initComputePipelines();
 
     // Helper functions
-    wgpu::ComputePipeline createComputePipeline(const std::string &entryPoint,
-                                                const wgpu::PipelineLayoutDescriptor &layoutDescriptor);
-    void createPerMipBindGroups(const wgpu::Texture &prefilteredSpecularCubemap);
+    wgpu::ComputePipeline
+    createComputePipeline(const std::string& entryPoint,
+                          const wgpu::PipelineLayoutDescriptor& layoutDescriptor);
+    void createPerMipBindGroups(const wgpu::Texture& prefilteredSpecularCubemap);
 
     // WebGPU objects (initialized by constructor)
     wgpu::Device m_device;

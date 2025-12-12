@@ -1,1 +1,18 @@
-BasedOnStyle: Microsoft
+BasedOnStyle: LLVM
+Language: Cpp
+
+IndentWidth: 4
+TabWidth: 4
+
+ColumnLimit: 100
+
+InsertBraces: true
+
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+
+ReferenceAlignment: Left
+
+IncludeBlocks: Regroup
+
+AlwaysBreakTemplateDeclarations: Yes

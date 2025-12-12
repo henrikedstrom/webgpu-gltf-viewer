@@ -11,8 +11,7 @@ constexpr uint32_t kDefaultWidth = 800;
 constexpr uint32_t kDefaultHeight = 600;
 
 // Main function
-int main()
-{
+int main() {
     // Create and run the application
     Application app(kDefaultWidth, kDefaultHeight);
     app.Run();

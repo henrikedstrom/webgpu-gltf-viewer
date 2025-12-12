@@ -10,7 +10,6 @@
 #define GLM_FORCE_RIGHT_HANDED
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
-
 #include <stb_image.h>
 
 // Project Headers
@@ -19,12 +18,11 @@
 //----------------------------------------------------------------------
 // Internal Utility Functions
 
-namespace
-{
+namespace {
 
-void DownsampleTexture(Environment::Texture &texture, int origWidth, int origHeight)
-{
-    std::cout << "Downsampling texture from " << origWidth << "x" << origHeight << " to 4096x2048." << std::endl;
+void DownsampleTexture(Environment::Texture& texture, int origWidth, int origHeight) {
+    std::cout << "Downsampling texture from " << origWidth << "x" << origHeight << " to 4096x2048."
+              << std::endl;
     auto start = std::chrono::high_resolution_clock::now();
 
     // Define target resolution (fixed 4096x2048; maintains 2:1 aspect ratio).
@@ -38,21 +36,18 @@ void DownsampleTexture(Environment::Texture &texture, int origWidth, int origHei
     float scaleY = float(origHeight - 1) / float(newHeight - 1);
 
     // Bilinear downsampling loop.
-    for (uint32_t j = 0; j < newHeight; ++j)
-    {
+    for (uint32_t j = 0; j < newHeight; ++j) {
         float origY = j * scaleY;
         int y0 = static_cast<int>(std::floor(origY));
         int y1 = std::min(y0 + 1, origHeight - 1);
         float dy = origY - y0;
-        for (uint32_t i = 0; i < newWidth; ++i)
-        {
+        for (uint32_t i = 0; i < newWidth; ++i) {
             float origX = i * scaleX;
             int x0 = static_cast<int>(std::floor(origX));
             int x1 = std::min(x0 + 1, origWidth - 1);
             float dx = origX - x0;
             // Process each channel (RGBA).
-            for (int c = 0; c < 4; ++c)
-            {
+            for (int c = 0; c < 4; ++c) {
                 float c00 = texture.m_data[(y0 * origWidth + x0) * 4 + c];
                 float c10 = texture.m_data[(y0 * origWidth + x1) * 4 + c];
                 float c01 = texture.m_data[(y1 * origWidth + x0) * 4 + c];
@@ -77,8 +72,7 @@ void DownsampleTexture(Environment::Texture &texture, int origWidth, int origHei
 }
 
 template <typename LoaderFunc, typename... Args>
-bool LoadFromSource(Environment::Texture &texture, LoaderFunc loader, Args &&...args)
-{
+bool LoadFromSource(Environment::Texture& texture, LoaderFunc loader, Args&&...args) {
     auto t0 = std::chrono::high_resolution_clock::now();
 
     int width = 0;
@@ -88,16 +82,15 @@ bool LoadFromSource(Environment::Texture &texture, LoaderFunc loader, Args &&...
     // Call the provided loader (either stbi_loadf or stbi_loadf_from_memory)
     float *data = loader(std::forward<Args>(args)..., &width, &height, &channels, 4);
 
-    if (!data)
-    {
+    if (!data) {
         std::cerr << "Failed to load image." << std::endl;
         std::cerr << "stb_image failure: " << stbi_failure_reason() << std::endl;
         return false;
     }
 
-    if (width != 2 * height)
-    {
-        std::cerr << "Error: Texture must have a 2:1 aspect ratio. Received: " << width << "x" << height << std::endl;
+    if (width != 2 * height) {
+        std::cerr << "Error: Texture must have a 2:1 aspect ratio. Received: " << width << "x"
+                  << height << std::endl;
         stbi_image_free(data);
         return false;
     }
@@ -111,14 +104,14 @@ bool LoadFromSource(Environment::Texture &texture, LoaderFunc loader, Args &&...
 
     auto t1 = std::chrono::high_resolution_clock::now();
     double durationMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    std::cout << "Loaded environment texture (" << width << "x" << height << ")" << 
-    " in " << durationMs << "ms" << std::endl;
+    std::cout << "Loaded environment texture (" << width << "x" << height << ")"
+              << " in " << durationMs << "ms" << std::endl;
 
     stbi_image_free(data);
 
-    // If the texture is larger than 4096x2048, downsample it to that resolution to make it more portable.
-    if (width > 4096)
-    {
+    // If the texture is larger than 4096x2048, downsample it to that resolution to make it more
+    // portable.
+    if (width > 4096) {
         DownsampleTexture(texture, width, height);
     }
 
@@ -130,14 +123,12 @@ bool LoadFromSource(Environment::Texture &texture, LoaderFunc loader, Args &&...
 //----------------------------------------------------------------------
 // Environment Class Implementation
 
-bool Environment::Load(const std::string &filename, const uint8_t *data, uint32_t size)
-{
+bool Environment::Load(const std::string& filename, const uint8_t *data, uint32_t size) {
     bool success = false;
 
     if (data) {
         success = LoadFromSource(m_texture, stbi_loadf_from_memory, data, size);
-    }
-    else {
+    } else {
         success = LoadFromSource(m_texture, stbi_loadf, filename.c_str());
     }
 
@@ -149,18 +140,15 @@ bool Environment::Load(const std::string &filename, const uint8_t *data, uint32_
     return success;
 }
 
-void Environment::UpdateRotation(float rotationAngle)
-{
+void Environment::UpdateRotation(float rotationAngle) {
     // Rotate the environment around the Y-axis
     m_transform = glm::rotate(glm::mat4(1.0f), rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
 }
 
-const glm::mat4 &Environment::GetTransform() const noexcept
-{
+const glm::mat4& Environment::GetTransform() const noexcept {
     return m_transform;
 }
 
-const Environment::Texture &Environment::GetTexture() const noexcept
-{
+const Environment::Texture& Environment::GetTexture() const noexcept {
     return m_texture;
 }

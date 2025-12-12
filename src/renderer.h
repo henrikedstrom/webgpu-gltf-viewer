@@ -10,19 +10,16 @@
 #include <glm/glm.hpp>
 #include <webgpu/webgpu_cpp.h>
 
-
 // Forward Declarations
 class Environment;
 class Model;
 struct GLFWwindow;
 
 // Renderer Class
-class Renderer
-{
+class Renderer {
   public:
     // Types used by the public interface
-    struct CameraUniformsInput
-    {
+    struct CameraUniformsInput {
         glm::mat4 viewMatrix;
         glm::mat4 projectionMatrix;
         glm::vec3 cameraPosition;
@@ -32,47 +29,47 @@ class Renderer
     Renderer() = default;
 
     // Rule of 5
-    Renderer(const Renderer &) = delete;
-    Renderer &operator=(const Renderer &) = delete;
-    Renderer(Renderer &&) = delete;
-    Renderer &operator=(Renderer &&) = delete;
+    Renderer(const Renderer&) = delete;
+    Renderer& operator=(const Renderer&) = delete;
+    Renderer(Renderer&&) = delete;
+    Renderer& operator=(Renderer&&) = delete;
 
     // Public Interface
-    void Initialize(GLFWwindow *window, const Environment &environment, const Model &model, uint32_t width,
-                    uint32_t height, const std::function<void()> &callback);
+    void Initialize(GLFWwindow *window, const Environment& environment, const Model& model,
+                    uint32_t width, uint32_t height, const std::function<void()>& callback);
     void Resize(uint32_t width, uint32_t height);
-    void Render(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera);
+    void Render(const glm::mat4& modelMatrix, const CameraUniformsInput& camera);
     void ReloadShaders();
-    void UpdateModel(const Model &model);
-    void UpdateEnvironment(const Environment &environment);
+    void UpdateModel(const Model& model);
+    void UpdateEnvironment(const Environment& environment);
 
   private:
     // Private utility methods
-    void InitGraphics(const Environment &environment, const Model &model, uint32_t width, uint32_t height);
+    void InitGraphics(const Environment& environment, const Model& model, uint32_t width,
+                      uint32_t height);
     void ConfigureSurface(uint32_t width, uint32_t height);
     void CreateDepthTexture(uint32_t width, uint32_t height);
     void CreateBindGroupLayouts();
     void CreateSamplers();
-    void CreateVertexBuffer(const Model &model);
-    void CreateIndexBuffer(const Model &model);
+    void CreateVertexBuffer(const Model& model);
+    void CreateIndexBuffer(const Model& model);
     void CreateUniformBuffers();
-    void CreateEnvironmentTextures(const Environment &environment);
-    void CreateSubMeshes(const Model &model);
-    void CreateMaterials(const Model &model);
+    void CreateEnvironmentTextures(const Environment& environment);
+    void CreateSubMeshes(const Model& model);
+    void CreateMaterials(const Model& model);
     void CreateGlobalBindGroup();
     void CreateEnvironmentRenderPipeline();
     void CreateModelRenderPipelines();
     void CreateRenderPassDescriptor();
     void CreateDefaultTextures();
-    void UpdateUniforms(const glm::mat4 &modelMatrix, const CameraUniformsInput &camera) const;
-    void SortTransparentMeshes(const glm::mat4 &modelMatrix, const glm::mat4 &viewMatrix);
-    void GetAdapter(const std::function<void(wgpu::Adapter)> &callback);
-    void GetDevice(const std::function<void(wgpu::Device)> &callback);
-    std::string LoadShaderFile(const std::string &filepath) const;
+    void UpdateUniforms(const glm::mat4& modelMatrix, const CameraUniformsInput& camera) const;
+    void SortTransparentMeshes(const glm::mat4& modelMatrix, const glm::mat4& viewMatrix);
+    void GetAdapter(const std::function<void(wgpu::Adapter)>& callback);
+    void GetDevice(const std::function<void(wgpu::Device)>& callback);
+    std::string LoadShaderFile(const std::string& filepath) const;
 
     // Types
-    struct GlobalUniforms
-    {
+    struct GlobalUniforms {
         alignas(16) glm::mat4 viewMatrix;
         alignas(16) glm::mat4 projectionMatrix;
         alignas(16) glm::mat4 inverseViewMatrix;
@@ -81,14 +78,12 @@ class Renderer
         float _pad;
     };
 
-    struct ModelUniforms
-    {
+    struct ModelUniforms {
         alignas(16) glm::mat4 modelMatrix;
         alignas(16) glm::mat4 normalMatrix;
     };
 
-    struct MaterialUniforms
-    {
+    struct MaterialUniforms {
         alignas(16) glm::vec4 baseColorFactor;
         alignas(16) glm::vec3 emissiveFactor;
         alignas(4) float metallicFactor;
@@ -100,26 +95,26 @@ class Renderer
     };
 
     struct Material {
-      MaterialUniforms m_uniforms;
-      wgpu::Buffer m_uniformBuffer;
-      wgpu::Texture m_baseColorTexture;
-      wgpu::Texture m_metallicRoughnessTexture;
-      wgpu::Texture m_normalTexture;
-      wgpu::Texture m_occlusionTexture;
-      wgpu::Texture m_emissiveTexture;
-      wgpu::BindGroup m_bindGroup;
+        MaterialUniforms m_uniforms;
+        wgpu::Buffer m_uniformBuffer;
+        wgpu::Texture m_baseColorTexture;
+        wgpu::Texture m_metallicRoughnessTexture;
+        wgpu::Texture m_normalTexture;
+        wgpu::Texture m_occlusionTexture;
+        wgpu::Texture m_emissiveTexture;
+        wgpu::BindGroup m_bindGroup;
     };
 
     struct SubMesh {
-      uint32_t m_firstIndex = 0; // First index in the index buffer
-      uint32_t m_indexCount = 0; // Number of indices in the submesh
-      int m_materialIndex = -1;  // Material index for the submesh
-      glm::vec3 m_centroid;
+        uint32_t m_firstIndex = 0; // First index in the index buffer
+        uint32_t m_indexCount = 0; // Number of indices in the submesh
+        int m_materialIndex = -1;  // Material index for the submesh
+        glm::vec3 m_centroid;
     };
 
     struct SubMeshDepthInfo {
-      float m_depth = 0.0f;
-      uint32_t m_meshIndex = 0;
+        float m_depth = 0.0f;
+        uint32_t m_meshIndex = 0;
     };
 
     // WebGPU resources
@@ -173,9 +168,11 @@ class Renderer
     wgpu::Texture m_defaultCubeTexture;
     wgpu::TextureView m_defaultCubeTextureView;
 
+    // Meshes and materials
     std::vector<SubMesh> m_opaqueMeshes;
     std::vector<SubMesh> m_transparentMeshes;
     std::vector<Material> m_materials;
 
+    // Per-frame sorted transparent meshes
     std::vector<SubMeshDepthInfo> m_transparentMeshesDepthSorted;
 };

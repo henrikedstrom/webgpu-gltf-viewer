@@ -11,15 +11,12 @@
 //----------------------------------------------------------------------
 // Internal Utility Functions
 
-namespace
-{
+namespace {
 
 // TODO: Move to helper class for managing resources
-std::string LoadShaderFile(const std::string &filepath)
-{
+std::string LoadShaderFile(const std::string& filepath) {
     std::ifstream file(filepath, std::ios::in | std::ios::binary);
-    if (!file.is_open())
-    {
+    if (!file.is_open()) {
         std::cerr << "Failed to open shader file: " + filepath + "\n";
         return "";
     }
@@ -34,8 +31,7 @@ std::string LoadShaderFile(const std::string &filepath)
 //----------------------------------------------------------------------
 // EnvironmentPreprocessor Class implementation
 
-EnvironmentPreprocessor::EnvironmentPreprocessor(const wgpu::Device &device)
-{
+EnvironmentPreprocessor::EnvironmentPreprocessor(const wgpu::Device& device) {
     m_device = device;
     initUniformBuffers();
     initSampler();
@@ -44,9 +40,10 @@ EnvironmentPreprocessor::EnvironmentPreprocessor(const wgpu::Device &device)
     initComputePipelines();
 }
 
-void EnvironmentPreprocessor::GenerateMaps(const wgpu::Texture &environmentCubemap, wgpu::Texture &irradianceCubemap,
-                                           wgpu::Texture &prefilteredSpecularCubemap, wgpu::Texture &brdfIntegrationLUT)
-{
+void EnvironmentPreprocessor::GenerateMaps(const wgpu::Texture& environmentCubemap,
+                                           wgpu::Texture& irradianceCubemap,
+                                           wgpu::Texture& prefilteredSpecularCubemap,
+                                           wgpu::Texture& brdfIntegrationLUT) {
     // Create views for the input cubemap and output cubemap.
     wgpu::TextureViewDescriptor inputViewDesc{};
     inputViewDesc.format = wgpu::TextureFormat::RGBA16Float;
@@ -109,18 +106,20 @@ void EnvironmentPreprocessor::GenerateMaps(const wgpu::Texture &environmentCubem
 
     // Set bind groups common to all faces.
     computePass.SetBindGroup(0, bindGroup0, 0, nullptr);
-    computePass.SetBindGroup(2, m_perMipBindGroups[0], 0, nullptr); // Make sure BG2 is valid (not used in first pass)
+    computePass.SetBindGroup(2, m_perMipBindGroups[0], 0,
+                             nullptr); // Make sure BG2 is valid (not used in first pass)
 
     // Dispatch a compute shader for each face of the cubemap.
     constexpr uint32_t numFaces = 6;
-    for (uint32_t face = 0; face < numFaces; ++face)
-    {
+    for (uint32_t face = 0; face < numFaces; ++face) {
         // For each face, update the per-face uniform (bind group 1).
         computePass.SetBindGroup(1, m_perFaceBindGroups[face], 0, nullptr);
 
         constexpr uint32_t workgroupSize = 8;
-        uint32_t workgroupCountX = (irradianceCubemap.GetWidth() + workgroupSize - 1) / workgroupSize;
-        uint32_t workgroupCountY = (irradianceCubemap.GetHeight() + workgroupSize - 1) / workgroupSize;
+        uint32_t workgroupCountX =
+            (irradianceCubemap.GetWidth() + workgroupSize - 1) / workgroupSize;
+        uint32_t workgroupCountY =
+            (irradianceCubemap.GetHeight() + workgroupSize - 1) / workgroupSize;
         computePass.DispatchWorkgroups(workgroupCountX, workgroupCountY, 1);
     }
 
@@ -132,13 +131,11 @@ void EnvironmentPreprocessor::GenerateMaps(const wgpu::Texture &environmentCubem
     computePass.SetPipeline(m_pipelinePrefilteredSpecular);
 
     // Dispatch a compute shader for each mip level of each face of the cubemap.
-    for (uint32_t face = 0; face < numFaces; ++face)
-    {
+    for (uint32_t face = 0; face < numFaces; ++face) {
         // Bind per-face uniform (bind group 1).
         computePass.SetBindGroup(1, m_perFaceBindGroups[face], 0, nullptr);
 
-        for (uint32_t mipLevel = 0; mipLevel < mipLevelCount; ++mipLevel)
-        {
+        for (uint32_t mipLevel = 0; mipLevel < mipLevelCount; ++mipLevel) {
             // Bind per-mip uniforms (bind group 2).
             computePass.SetBindGroup(2, m_perMipBindGroups[mipLevel], 0, nullptr);
 
@@ -172,8 +169,7 @@ void EnvironmentPreprocessor::GenerateMaps(const wgpu::Texture &environmentCubem
     queue.Submit(1, &commands);
 }
 
-void EnvironmentPreprocessor::initUniformBuffers()
-{
+void EnvironmentPreprocessor::initUniformBuffers() {
     // Create a buffer for the prefilter parameters
     wgpu::BufferDescriptor bufferDescriptor{};
     bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
@@ -186,17 +182,16 @@ void EnvironmentPreprocessor::initUniformBuffers()
     // Update descriptor for per-face uniform buffers
     bufferDescriptor.size = sizeof(uint32_t); // Face id
 
-    for (uint32_t face = 0; face < 6; ++face)
-    {
+    for (uint32_t face = 0; face < 6; ++face) {
         m_perFaceUniformBuffers[face] = m_device.CreateBuffer(&bufferDescriptor);
 
         uint32_t faceIndexValue = face;
-        m_device.GetQueue().WriteBuffer(m_perFaceUniformBuffers[face], 0, &faceIndexValue, sizeof(uint32_t));
+        m_device.GetQueue().WriteBuffer(m_perFaceUniformBuffers[face], 0, &faceIndexValue,
+                                        sizeof(uint32_t));
     }
 }
 
-void EnvironmentPreprocessor::initSampler()
-{
+void EnvironmentPreprocessor::initSampler() {
     wgpu::SamplerDescriptor samplerDescriptor{};
     samplerDescriptor.addressModeU = wgpu::AddressMode::Repeat;
     samplerDescriptor.addressModeV = wgpu::AddressMode::Repeat;
@@ -207,8 +202,7 @@ void EnvironmentPreprocessor::initSampler()
     m_environmentSampler = m_device.CreateSampler(&samplerDescriptor);
 }
 
-void EnvironmentPreprocessor::initBindGroupLayouts()
-{
+void EnvironmentPreprocessor::initBindGroupLayouts() {
     wgpu::BindGroupLayoutEntry samplerEntry{};
     samplerEntry.binding = 0;
     samplerEntry.visibility = wgpu::ShaderStage::Compute;
@@ -241,8 +235,8 @@ void EnvironmentPreprocessor::initBindGroupLayouts()
     brdfLutEntry.storageTexture.format = wgpu::TextureFormat::RGBA16Float;
     brdfLutEntry.storageTexture.viewDimension = wgpu::TextureViewDimension::e2D;
 
-    wgpu::BindGroupLayoutEntry group0Entries[] = {samplerEntry, cubemapEntry, numSamplesEntry, irradinaceEntry,
-                                                  brdfLutEntry};
+    wgpu::BindGroupLayoutEntry group0Entries[] = {samplerEntry, cubemapEntry, numSamplesEntry,
+                                                  irradinaceEntry, brdfLutEntry};
     wgpu::BindGroupLayoutDescriptor group0LayoutDesc{};
     group0LayoutDesc.entryCount = 5;
     group0LayoutDesc.entries = group0Entries;
@@ -280,11 +274,9 @@ void EnvironmentPreprocessor::initBindGroupLayouts()
     m_bindGroupLayouts[2] = m_device.CreateBindGroupLayout(&group2LayoutDesc);
 }
 
-void EnvironmentPreprocessor::initBindGroups()
-{
+void EnvironmentPreprocessor::initBindGroups() {
     // Create bind groups for per-face uniform buffers
-    for (uint32_t face = 0; face < 6; ++face)
-    {
+    for (uint32_t face = 0; face < 6; ++face) {
         wgpu::BindGroupEntry bindGroupEntries[1]{};
         bindGroupEntries[0].binding = 0;
         bindGroupEntries[0].buffer = m_perFaceUniformBuffers[face];
@@ -297,8 +289,7 @@ void EnvironmentPreprocessor::initBindGroups()
     }
 }
 
-void EnvironmentPreprocessor::initComputePipelines()
-{
+void EnvironmentPreprocessor::initComputePipelines() {
     std::string shaderCode = LoadShaderFile("./assets/shaders/environment_prefilter.wgsl");
 
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
@@ -333,8 +324,8 @@ void EnvironmentPreprocessor::initComputePipelines()
     m_pipelineBRDFIntegrationLUT = m_device.CreateComputePipeline(&descriptor);
 }
 
-void EnvironmentPreprocessor::createPerMipBindGroups(const wgpu::Texture &prefilteredSpecularCubemap)
-{
+void EnvironmentPreprocessor::createPerMipBindGroups(
+    const wgpu::Texture& prefilteredSpecularCubemap) {
     const uint32_t mipLevelCount = prefilteredSpecularCubemap.GetMipLevelCount();
 
     m_perMipUniformBuffers.resize(mipLevelCount);
@@ -344,11 +335,11 @@ void EnvironmentPreprocessor::createPerMipBindGroups(const wgpu::Texture &prefil
     wgpu::BufferDescriptor bufferDescriptor{};
     bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
     bufferDescriptor.size = sizeof(float);
-    for (uint32_t i = 0; i < mipLevelCount; ++i)
-    {
+    for (uint32_t i = 0; i < mipLevelCount; ++i) {
         m_perMipUniformBuffers[i] = m_device.CreateBuffer(&bufferDescriptor);
         float roughness = static_cast<float>(i) / static_cast<float>(mipLevelCount - 1);
-        m_device.GetQueue().WriteBuffer(m_perMipUniformBuffers[i], 0, &roughness, sizeof(roughness));
+        m_device.GetQueue().WriteBuffer(m_perMipUniformBuffers[i], 0, &roughness,
+                                        sizeof(roughness));
     }
 
     // Create a texture view descriptor for the output cubemap
@@ -371,12 +362,12 @@ void EnvironmentPreprocessor::createPerMipBindGroups(const wgpu::Texture &prefil
     bindGroup2Descriptor.entries = bindGroup2Entries;
 
     // Create bind groups for each mip level
-    for (uint32_t mipLevel = 0; mipLevel < mipLevelCount; ++mipLevel)
-    {
+    for (uint32_t mipLevel = 0; mipLevel < mipLevelCount; ++mipLevel) {
         // Update per-mip bind group (bind group 2).
         outputCubeViewDesc.baseMipLevel = mipLevel;
         bindGroup2Entries[0].buffer = m_perMipUniformBuffers[mipLevel];
-        bindGroup2Entries[1].textureView = prefilteredSpecularCubemap.CreateView(&outputCubeViewDesc);
+        bindGroup2Entries[1].textureView =
+            prefilteredSpecularCubemap.CreateView(&outputCubeViewDesc);
         m_perMipBindGroups[mipLevel] = m_device.CreateBindGroup(&bindGroup2Descriptor);
     }
 }

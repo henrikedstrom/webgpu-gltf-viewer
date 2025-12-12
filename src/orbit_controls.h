@@ -8,17 +8,16 @@ class Camera;
 struct GLFWwindow;
 
 // OrbitControls Class
-class OrbitControls
-{
+class OrbitControls {
   public:
     // Constructor
     explicit OrbitControls(GLFWwindow *window, Camera *camera);
 
     // Rule of 5
-    OrbitControls(const OrbitControls &) = delete;
-    OrbitControls &operator=(const OrbitControls &) = delete;
-    OrbitControls(OrbitControls &&) = default;
-    OrbitControls &operator=(OrbitControls &&) = default;
+    OrbitControls(const OrbitControls&) = delete;
+    OrbitControls& operator=(const OrbitControls&) = delete;
+    OrbitControls(OrbitControls&&) = default;
+    OrbitControls& operator=(OrbitControls&&) = default;
 
   private:
     // Static Callback Functions

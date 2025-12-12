@@ -11,15 +11,12 @@
 //----------------------------------------------------------------------
 // Internal Utility Functions
 
-namespace
-{
+namespace {
 
 // TODO: Move to helper class for managing resources
-std::string LoadShaderFile(const std::string &filepath)
-{
+std::string LoadShaderFile(const std::string& filepath) {
     std::ifstream file(filepath, std::ios::in | std::ios::binary);
-    if (!file.is_open())
-    {
+    if (!file.is_open()) {
         std::cerr << "Failed to open shader file: " + filepath + "\n";
         return "";
     }
@@ -34,8 +31,7 @@ std::string LoadShaderFile(const std::string &filepath)
 //----------------------------------------------------------------------
 // MipmapGenerator Class implementation
 
-MipmapGenerator::MipmapGenerator(const wgpu::Device &device)
-{
+MipmapGenerator::MipmapGenerator(const wgpu::Device& device) {
     m_device = device;
     initUniformBuffers();
     initBindGroupLayouts();
@@ -43,12 +39,9 @@ MipmapGenerator::MipmapGenerator(const wgpu::Device &device)
     initRenderPipeline();
 }
 
-
-
-void MipmapGenerator::GenerateMipmaps(const wgpu::Texture &texture, wgpu::Extent3D size, MipKind kind)
-{
-    switch (kind)
-    {
+void MipmapGenerator::GenerateMipmaps(const wgpu::Texture& texture, wgpu::Extent3D size,
+                                      MipKind kind) {
+    switch (kind) {
     case MipKind::LinearUNorm2D:
         generate2DCompute(texture, size, m_pipeline2D, m_bindGroupLayout2D);
         break;
@@ -67,23 +60,21 @@ void MipmapGenerator::GenerateMipmaps(const wgpu::Texture &texture, wgpu::Extent
     }
 }
 
-void MipmapGenerator::initUniformBuffers()
-{
+void MipmapGenerator::initUniformBuffers() {
     wgpu::BufferDescriptor bufferDescriptor{};
     bufferDescriptor.size = sizeof(uint32_t); // Face id
     bufferDescriptor.usage = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
 
-    for (uint32_t face = 0; face < 6; ++face)
-    {
+    for (uint32_t face = 0; face < 6; ++face) {
         m_uniformBuffers[face] = m_device.CreateBuffer(&bufferDescriptor);
 
         uint32_t faceIndexValue = face;
-        m_device.GetQueue().WriteBuffer(m_uniformBuffers[face], 0, &faceIndexValue, sizeof(uint32_t));
+        m_device.GetQueue().WriteBuffer(m_uniformBuffers[face], 0, &faceIndexValue,
+                                        sizeof(uint32_t));
     }
 }
 
-void MipmapGenerator::initBindGroupLayouts()
-{
+void MipmapGenerator::initBindGroupLayouts() {
     // Common input texture layout
     wgpu::BindGroupLayoutEntry inputTexture{};
     inputTexture.binding = 0;
@@ -133,8 +124,7 @@ void MipmapGenerator::initBindGroupLayouts()
     m_bindGroupLayoutFace = m_device.CreateBindGroupLayout(&layoutDescFace);
 
     // Create bind groups for each face
-    for (uint32_t face = 0; face < 6; ++face)
-    {
+    for (uint32_t face = 0; face < 6; ++face) {
         wgpu::BindGroupEntry bindGroupEntries[1]{};
         bindGroupEntries[0].binding = 0;
         bindGroupEntries[0].buffer = m_uniformBuffers[face];
@@ -149,18 +139,19 @@ void MipmapGenerator::initBindGroupLayouts()
     }
 }
 
-void MipmapGenerator::initComputePipelines()
-{
+void MipmapGenerator::initComputePipelines() {
     std::vector<wgpu::BindGroupLayout> layouts2D = {m_bindGroupLayout2D};
     std::vector<wgpu::BindGroupLayout> layoutsCube = {m_bindGroupLayoutCube, m_bindGroupLayoutFace};
     m_pipeline2D = createComputePipeline("./assets/shaders/mipmap_generator_2d.wgsl", layouts2D);
-    m_pipelineCube = createComputePipeline("./assets/shaders/mipmap_generator_cube.wgsl", layoutsCube);
-    m_pipelineNormal2D = createComputePipeline("./assets/shaders/mipmap_generator_normal_2d.wgsl", layouts2D);
+    m_pipelineCube =
+        createComputePipeline("./assets/shaders/mipmap_generator_cube.wgsl", layoutsCube);
+    m_pipelineNormal2D =
+        createComputePipeline("./assets/shaders/mipmap_generator_normal_2d.wgsl", layouts2D);
 }
 
-wgpu::ComputePipeline MipmapGenerator::createComputePipeline(const std::string &shaderPath,
-                                                             const std::vector<wgpu::BindGroupLayout> &layouts)
-{
+wgpu::ComputePipeline
+MipmapGenerator::createComputePipeline(const std::string& shaderPath,
+                                       const std::vector<wgpu::BindGroupLayout>& layouts) {
     std::string shaderCode = LoadShaderFile(shaderPath);
 
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
@@ -184,8 +175,8 @@ wgpu::ComputePipeline MipmapGenerator::createComputePipeline(const std::string &
     return m_device.CreateComputePipeline(&descriptor);
 }
 
-wgpu::RenderPipeline MipmapGenerator::createRenderPipeline(const std::string &shaderPath, wgpu::TextureFormat colorFormat)
-{
+wgpu::RenderPipeline MipmapGenerator::createRenderPipeline(const std::string& shaderPath,
+                                                           wgpu::TextureFormat colorFormat) {
     std::string shaderCode = LoadShaderFile(shaderPath);
 
     wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
@@ -235,18 +226,17 @@ wgpu::RenderPipeline MipmapGenerator::createRenderPipeline(const std::string &sh
     return m_device.CreateRenderPipeline(&desc);
 }
 
-void MipmapGenerator::initRenderPipeline()
-{
+void MipmapGenerator::initRenderPipeline() {
     // Create render pipeline targeting sRGB RGBA8 color
     m_renderPipelineSRGB2D = createRenderPipeline("./assets/shaders/mipmap_downsample_render.wgsl",
                                                   m_renderColorFormatSRGB);
 }
 
-void MipmapGenerator::generate2DCompute(const wgpu::Texture &texture, wgpu::Extent3D size,
-                                        const wgpu::ComputePipeline &pipeline,
-                                        const wgpu::BindGroupLayout &layout)
-{
-    uint32_t mipLevelCount = 1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
+void MipmapGenerator::generate2DCompute(const wgpu::Texture& texture, wgpu::Extent3D size,
+                                        const wgpu::ComputePipeline& pipeline,
+                                        const wgpu::BindGroupLayout& layout) {
+    uint32_t mipLevelCount =
+        1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
 
     // Create mip level views
     wgpu::TextureViewDescriptor viewDescriptor{};
@@ -258,8 +248,7 @@ void MipmapGenerator::generate2DCompute(const wgpu::Texture &texture, wgpu::Exte
     viewDescriptor.arrayLayerCount = 1;
 
     std::vector<wgpu::TextureView> mipLevelViews(mipLevelCount);
-    for (uint32_t i = 0; i < mipLevelCount; ++i)
-    {
+    for (uint32_t i = 0; i < mipLevelCount; ++i) {
         viewDescriptor.baseMipLevel = i;
         mipLevelViews[i] = texture.CreateView(&viewDescriptor);
     }
@@ -275,8 +264,7 @@ void MipmapGenerator::generate2DCompute(const wgpu::Texture &texture, wgpu::Exte
     bindGroupEntries[0].binding = 0;
     bindGroupEntries[1].binding = 1;
 
-    for (uint32_t nextLevel = 1; nextLevel < mipLevelViews.size(); ++nextLevel)
-    {
+    for (uint32_t nextLevel = 1; nextLevel < mipLevelViews.size(); ++nextLevel) {
         uint32_t width = std::max(1u, size.width >> nextLevel);
         uint32_t height = std::max(1u, size.height >> nextLevel);
 
@@ -298,8 +286,7 @@ void MipmapGenerator::generate2DCompute(const wgpu::Texture &texture, wgpu::Exte
     m_device.GetQueue().Submit(1, &commands);
 }
 
-void MipmapGenerator::generateCubeCompute(const wgpu::Texture &texture, wgpu::Extent3D size)
-{
+void MipmapGenerator::generateCubeCompute(const wgpu::Texture& texture, wgpu::Extent3D size) {
     const uint32_t mipLevelCount =
         1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
 
@@ -313,8 +300,7 @@ void MipmapGenerator::generateCubeCompute(const wgpu::Texture &texture, wgpu::Ex
     viewDescriptor.arrayLayerCount = 6u;
 
     std::vector<wgpu::TextureView> mipLevelViews(mipLevelCount);
-    for (uint32_t i = 0; i < mipLevelCount; ++i)
-    {
+    for (uint32_t i = 0; i < mipLevelCount; ++i) {
         viewDescriptor.baseMipLevel = i;
         mipLevelViews[i] = texture.CreateView(&viewDescriptor);
     }
@@ -333,13 +319,11 @@ void MipmapGenerator::generateCubeCompute(const wgpu::Texture &texture, wgpu::Ex
     bindGroupEntries[1].binding = 1; // Next mip level
 
     // For each face and mip level
-    for (uint32_t face = 0; face < 6u; ++face)
-    {
+    for (uint32_t face = 0; face < 6u; ++face) {
         // Set per-face uniform (group 1)
         computePass.SetBindGroup(1, m_faceBindGroups[face], 0, nullptr);
 
-        for (uint32_t nextLevel = 1; nextLevel < mipLevelViews.size(); ++nextLevel)
-        {
+        for (uint32_t nextLevel = 1; nextLevel < mipLevelViews.size(); ++nextLevel) {
             const uint32_t width = std::max(1u, size.width >> nextLevel);
             const uint32_t height = std::max(1u, size.height >> nextLevel);
 
@@ -362,16 +346,15 @@ void MipmapGenerator::generateCubeCompute(const wgpu::Texture &texture, wgpu::Ex
     m_device.GetQueue().Submit(1, &cb);
 }
 
-void MipmapGenerator::generate2DRenderSRGB(const wgpu::Texture &texture, wgpu::Extent3D size)
-{
-    const uint32_t mipLevelCount = 1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
+void MipmapGenerator::generate2DRenderSRGB(const wgpu::Texture& texture, wgpu::Extent3D size) {
+    const uint32_t mipLevelCount =
+        1 + static_cast<uint32_t>(std::log2(std::max(size.width, size.height)));
 
     // Create command encoder
     wgpu::CommandEncoder encoder = m_device.CreateCommandEncoder();
 
     // Iterate over mip levels
-    for (uint32_t nextLevel = 1; nextLevel < mipLevelCount; ++nextLevel)
-    {
+    for (uint32_t nextLevel = 1; nextLevel < mipLevelCount; ++nextLevel) {
         // Views for prev (sampled) and next (render target) levels
         wgpu::TextureViewDescriptor prevDesc{};
         prevDesc.format = wgpu::TextureFormat::RGBA8UnormSrgb;

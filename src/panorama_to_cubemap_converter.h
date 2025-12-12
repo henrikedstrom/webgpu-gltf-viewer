@@ -14,25 +14,25 @@
 #include "environment.h"
 
 /// @brief Converts an equirectangular panorama texture to a cubemap using a compute shader.
-class PanoramaToCubemapConverter
-{
+class PanoramaToCubemapConverter {
   public:
     /// @brief Constructs a new converter using the provided WebGPU device.
-    explicit PanoramaToCubemapConverter(const wgpu::Device &device);
+    explicit PanoramaToCubemapConverter(const wgpu::Device& device);
 
     /// @brief Default destructor.
     ~PanoramaToCubemapConverter() = default;
 
     // Rule of 5
-    PanoramaToCubemapConverter(const PanoramaToCubemapConverter &) = delete;
-    PanoramaToCubemapConverter &operator=(const PanoramaToCubemapConverter &) = delete;
-    PanoramaToCubemapConverter(PanoramaToCubemapConverter &&) noexcept = default;
-    PanoramaToCubemapConverter &operator=(PanoramaToCubemapConverter &&) noexcept = default;
+    PanoramaToCubemapConverter(const PanoramaToCubemapConverter&) = delete;
+    PanoramaToCubemapConverter& operator=(const PanoramaToCubemapConverter&) = delete;
+    PanoramaToCubemapConverter(PanoramaToCubemapConverter&&) noexcept = default;
+    PanoramaToCubemapConverter& operator=(PanoramaToCubemapConverter&&) noexcept = default;
 
     /// @brief Uploads the panorama texture and converts it into the provided cubemap texture.
     /// @param panoramaTextureInfo The source panorama texture data.
     /// @param environmentCubemap The destination cubemap texture.
-    void UploadAndConvert(const Environment::Texture &panoramaTextureInfo, wgpu::Texture &environmentCubemap);
+    void UploadAndConvert(const Environment::Texture& panoramaTextureInfo,
+                          wgpu::Texture& environmentCubemap);
 
   private:
     // Pipeline initialization functions.
@@ -42,9 +42,11 @@ class PanoramaToCubemapConverter
     void InitBindGroups();
     void InitComputePipeline();
 
-    /// @brief Helper to create a compute pipeline given an entry point and pipeline layout descriptor.
-    wgpu::ComputePipeline CreateComputePipeline(const std::string &entryPoint,
-                                                const wgpu::PipelineLayoutDescriptor &layoutDescriptor);
+    /// @brief Helper to create a compute pipeline given an entry point and pipeline layout
+    /// descriptor.
+    wgpu::ComputePipeline
+    CreateComputePipeline(const std::string& entryPoint,
+                          const wgpu::PipelineLayoutDescriptor& layoutDescriptor);
 
     // WebGPU objects (initialized by constructor)
     wgpu::Device m_device;

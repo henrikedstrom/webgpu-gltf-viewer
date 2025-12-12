@@ -4,23 +4,20 @@
 #include <glm/glm.hpp>
 
 // Camera Class
-class Camera
-{
+class Camera {
   public:
     // Constants
     static constexpr float kDefaultFOV{45.0f}; // Default field of view
 
     // Constructors
     Camera() = default;
-    Camera(int width, int height) : m_width(width), m_height(height)
-    {
-    }
+    Camera(int width, int height) : m_width(width), m_height(height) {}
 
     // Rule of 5
-    Camera(const Camera &) = default;
-    Camera &operator=(const Camera &) = default;
-    Camera(Camera &&) = default;
-    Camera &operator=(Camera &&) = default;
+    Camera(const Camera&) = default;
+    Camera& operator=(const Camera&) = default;
+    Camera(Camera&&) = default;
+    Camera& operator=(Camera&&) = default;
 
     // Public Interface
     void Tumble(int dx, int dy);

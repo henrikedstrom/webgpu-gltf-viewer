@@ -16,8 +16,7 @@
 struct GLFWwindow;
 
 // Application Class
-class Application
-{
+class Application {
   public:
     // Static Instance Getter
     static Application *GetInstance();
@@ -27,16 +26,16 @@ class Application
     ~Application();
 
     // Deleted Functions
-    Application(const Application &) = delete;
-    Application &operator=(const Application &) = delete;
-    Application(Application &&) = delete;
-    Application &operator=(Application &&) = delete;
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
+    Application(Application&&) = delete;
+    Application& operator=(Application&&) = delete;
 
     // Public Interface
     void Run();
     void OnKeyPressed(int key, int mods);
     void OnResize(int width, int height);
-    void OnFileDropped(const std::string &filename, uint8_t *data = 0, int length = 0);
+    void OnFileDropped(const std::string& filename, uint8_t *data = 0, int length = 0);
 
   private:
     // Private Member Functions
@@ -59,7 +58,7 @@ class Application
     Renderer m_renderer;
 
     std::unique_ptr<OrbitControls> m_controls;
-    
+
     // Frame timing
     std::chrono::high_resolution_clock::time_point m_lastTime;
     bool m_hasLastTime = false;

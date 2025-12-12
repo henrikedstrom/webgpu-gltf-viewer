@@ -20,22 +20,19 @@
 //----------------------------------------------------------------------
 // Internal Constants and Utility Functions
 
-namespace
-{
+namespace {
 
 // Constants
 constexpr float PI = 3.14159265358979323846f;
 
-void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::vector<Model::Vertex> &vertices,
-                 std::vector<uint32_t> &indices, std::vector<Model::SubMesh> &subMeshes, const glm::mat4 &transform)
-{
+void ProcessMesh(const tinygltf::Model& model, const tinygltf::Mesh& mesh,
+                 std::vector<Model::Vertex>& vertices, std::vector<uint32_t>& indices,
+                 std::vector<Model::SubMesh>& subMeshes, const glm::mat4& transform) {
     glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(transform)));
     glm::mat3 tangentMatrix = glm::mat3(transform);
 
-    for (const auto &primitive : mesh.primitives)
-    {
-        if (primitive.material < 0)
-        {
+    for (const auto& primitive : mesh.primitives) {
+        if (primitive.material < 0) {
             // TODO: Handle this in another way? Assign 'default' material?
             continue;
         }
@@ -49,24 +46,26 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         uint32_t vertexOffset = static_cast<uint32_t>(vertices.size());
 
         // Access vertex positions
-        const auto &positionAccessor = model.accessors[primitive.attributes.find("POSITION")->second];
-        const auto &positionBufferView = model.bufferViews[positionAccessor.bufferView];
-        const auto &positionBuffer = model.buffers[positionBufferView.buffer];
-        const float *positionData = reinterpret_cast<const float *>(
-            positionBuffer.data.data() + positionBufferView.byteOffset + positionAccessor.byteOffset);
-        const size_t positionStride = positionAccessor.ByteStride(positionBufferView) / sizeof(float);
+        const auto& positionAccessor =
+            model.accessors[primitive.attributes.find("POSITION")->second];
+        const auto& positionBufferView = model.bufferViews[positionAccessor.bufferView];
+        const auto& positionBuffer = model.buffers[positionBufferView.buffer];
+        const float *positionData = reinterpret_cast<const float *>(positionBuffer.data.data() +
+                                                                    positionBufferView.byteOffset +
+                                                                    positionAccessor.byteOffset);
+        const size_t positionStride =
+            positionAccessor.ByteStride(positionBufferView) / sizeof(float);
 
         // Optional: Access vertex normals
         const auto normalIter = primitive.attributes.find("NORMAL");
         const float *normalData = nullptr;
         size_t normalStride = 0;
-        if (normalIter != primitive.attributes.end())
-        {
-            const auto &normalAccessor = model.accessors[normalIter->second];
-            const auto &normalBufferView = model.bufferViews[normalAccessor.bufferView];
-            const auto &normalBuffer = model.buffers[normalBufferView.buffer];
-            normalData = reinterpret_cast<const float *>(normalBuffer.data.data() + normalBufferView.byteOffset +
-                                                         normalAccessor.byteOffset);
+        if (normalIter != primitive.attributes.end()) {
+            const auto& normalAccessor = model.accessors[normalIter->second];
+            const auto& normalBufferView = model.bufferViews[normalAccessor.bufferView];
+            const auto& normalBuffer = model.buffers[normalBufferView.buffer];
+            normalData = reinterpret_cast<const float *>(
+                normalBuffer.data.data() + normalBufferView.byteOffset + normalAccessor.byteOffset);
             normalStride = normalAccessor.ByteStride(normalBufferView) / sizeof(float);
         }
 
@@ -74,12 +73,12 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         const auto tangentIter = primitive.attributes.find("TANGENT");
         const float *tangentData = nullptr;
         size_t tangentStride = 0;
-        if (tangentIter != primitive.attributes.end())
-        {
-            const auto &tangentAccessor = model.accessors[tangentIter->second];
-            const auto &tangentBufferView = model.bufferViews[tangentAccessor.bufferView];
-            const auto &tangentBuffer = model.buffers[tangentBufferView.buffer];
-            tangentData = reinterpret_cast<const float *>(tangentBuffer.data.data() + tangentBufferView.byteOffset +
+        if (tangentIter != primitive.attributes.end()) {
+            const auto& tangentAccessor = model.accessors[tangentIter->second];
+            const auto& tangentBufferView = model.bufferViews[tangentAccessor.bufferView];
+            const auto& tangentBuffer = model.buffers[tangentBufferView.buffer];
+            tangentData = reinterpret_cast<const float *>(tangentBuffer.data.data() +
+                                                          tangentBufferView.byteOffset +
                                                           tangentAccessor.byteOffset);
             tangentStride = tangentAccessor.ByteStride(tangentBufferView) / sizeof(float);
         }
@@ -88,12 +87,12 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         const auto texCoord0Iter = primitive.attributes.find("TEXCOORD_0");
         const float *texCoord0Data = nullptr;
         size_t texCoord0Stride = 0;
-        if (texCoord0Iter != primitive.attributes.end())
-        {
-            const auto &texCoordAccessor = model.accessors[texCoord0Iter->second];
-            const auto &texCoordBufferView = model.bufferViews[texCoordAccessor.bufferView];
-            const auto &texCoordBuffer = model.buffers[texCoordBufferView.buffer];
-            texCoord0Data = reinterpret_cast<const float *>(texCoordBuffer.data.data() + texCoordBufferView.byteOffset +
+        if (texCoord0Iter != primitive.attributes.end()) {
+            const auto& texCoordAccessor = model.accessors[texCoord0Iter->second];
+            const auto& texCoordBufferView = model.bufferViews[texCoordAccessor.bufferView];
+            const auto& texCoordBuffer = model.buffers[texCoordBufferView.buffer];
+            texCoord0Data = reinterpret_cast<const float *>(texCoordBuffer.data.data() +
+                                                            texCoordBufferView.byteOffset +
                                                             texCoordAccessor.byteOffset);
             texCoord0Stride = texCoordAccessor.ByteStride(texCoordBufferView) / sizeof(float);
         }
@@ -101,12 +100,12 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         const auto texCoord1Iter = primitive.attributes.find("TEXCOORD_1");
         const float *texCoord1Data = nullptr;
         size_t texCoord1Stride = 0;
-        if (texCoord1Iter != primitive.attributes.end())
-        {
-            const auto &texCoordAccessor = model.accessors[texCoord1Iter->second];
-            const auto &texCoordBufferView = model.bufferViews[texCoordAccessor.bufferView];
-            const auto &texCoordBuffer = model.buffers[texCoordBufferView.buffer];
-            texCoord1Data = reinterpret_cast<const float *>(texCoordBuffer.data.data() + texCoordBufferView.byteOffset +
+        if (texCoord1Iter != primitive.attributes.end()) {
+            const auto& texCoordAccessor = model.accessors[texCoord1Iter->second];
+            const auto& texCoordBufferView = model.bufferViews[texCoordAccessor.bufferView];
+            const auto& texCoordBuffer = model.buffers[texCoordBufferView.buffer];
+            texCoord1Data = reinterpret_cast<const float *>(texCoordBuffer.data.data() +
+                                                            texCoordBufferView.byteOffset +
                                                             texCoordAccessor.byteOffset);
             texCoord1Stride = texCoordAccessor.ByteStride(texCoordBufferView) / sizeof(float);
         }
@@ -115,23 +114,22 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         const auto colorIter = primitive.attributes.find("COLOR_0");
         const float *colorData = nullptr;
         size_t colorStride = 0;
-        if (colorIter != primitive.attributes.end())
-        {
-            const auto &colorAccessor = model.accessors[colorIter->second];
-            const auto &colorBufferView = model.bufferViews[colorAccessor.bufferView];
-            const auto &colorBuffer = model.buffers[colorBufferView.buffer];
-            colorData = reinterpret_cast<const float *>(colorBuffer.data.data() + colorBufferView.byteOffset +
-                                                        colorAccessor.byteOffset);
+        if (colorIter != primitive.attributes.end()) {
+            const auto& colorAccessor = model.accessors[colorIter->second];
+            const auto& colorBufferView = model.bufferViews[colorAccessor.bufferView];
+            const auto& colorBuffer = model.buffers[colorBufferView.buffer];
+            colorData = reinterpret_cast<const float *>(
+                colorBuffer.data.data() + colorBufferView.byteOffset + colorAccessor.byteOffset);
             colorStride = colorAccessor.ByteStride(colorBufferView) / sizeof(float);
         }
 
         // Copy vertex data into Vertex struct
-        for (size_t i = 0; i < positionAccessor.count; ++i)
-        {
+        for (size_t i = 0; i < positionAccessor.count; ++i) {
             Model::Vertex vertex;
 
             // Position
-            glm::vec4 pos = glm::vec4(positionData[i * positionStride + 0], positionData[i * positionStride + 1],
+            glm::vec4 pos = glm::vec4(positionData[i * positionStride + 0],
+                                      positionData[i * positionStride + 1],
                                       positionData[i * positionStride + 2], 1.0f);
             vertex.m_position = glm::vec3(transform * pos);
 
@@ -140,61 +138,50 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
             subMesh.m_maxBounds = glm::max(subMesh.m_maxBounds, vertex.m_position);
 
             // Normal (default to 0, 0, 1 if not provided)
-            if (normalData)
-            {
-                vertex.m_normal = glm::normalize(normalMatrix * glm::vec3(normalData[i * normalStride + 0],
-                                                                          normalData[i * normalStride + 1],
-                                                                          normalData[i * normalStride + 2]));
-            }
-            else
-            {
+            if (normalData) {
+                vertex.m_normal =
+                    glm::normalize(normalMatrix * glm::vec3(normalData[i * normalStride + 0],
+                                                            normalData[i * normalStride + 1],
+                                                            normalData[i * normalStride + 2]));
+            } else {
                 vertex.m_normal = glm::normalize(normalMatrix * glm::vec3(0.0f, 0.0f, 1.0f));
             }
 
             // Tangent (default to 0, 0, 0, 1 if not provided)
-            if (tangentData)
-            {
+            if (tangentData) {
                 glm::vec3 transformedTangent =
-                    tangentMatrix * glm::vec3(tangentData[i * tangentStride + 0], tangentData[i * tangentStride + 1],
+                    tangentMatrix * glm::vec3(tangentData[i * tangentStride + 0],
+                                              tangentData[i * tangentStride + 1],
                                               tangentData[i * tangentStride + 2]);
 
-                vertex.m_tangent = glm::vec4(glm::normalize(transformedTangent),
-                                             tangentData[i * tangentStride + 3]); // Preserve handedness (w)
-            }
-            else
-            {
+                vertex.m_tangent =
+                    glm::vec4(glm::normalize(transformedTangent),
+                              tangentData[i * tangentStride + 3]); // Preserve handedness (w)
+            } else {
                 vertex.m_tangent = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
             }
 
             // Texture coordinates (default to 0, 0 if not provided)
-            if (texCoord0Data)
-            {
-                vertex.m_texCoord0 =
-                    glm::vec2(texCoord0Data[i * texCoord0Stride + 0], texCoord0Data[i * texCoord0Stride + 1]);
-            }
-            else
-            {
+            if (texCoord0Data) {
+                vertex.m_texCoord0 = glm::vec2(texCoord0Data[i * texCoord0Stride + 0],
+                                               texCoord0Data[i * texCoord0Stride + 1]);
+            } else {
                 vertex.m_texCoord0 = glm::vec2(0.0f, 0.0f);
             }
 
-            if (texCoord1Data)
-            {
-                vertex.m_texCoord1 =
-                    glm::vec2(texCoord1Data[i * texCoord1Stride + 0], texCoord1Data[i * texCoord1Stride + 1]);
-            }
-            else
-            {
+            if (texCoord1Data) {
+                vertex.m_texCoord1 = glm::vec2(texCoord1Data[i * texCoord1Stride + 0],
+                                               texCoord1Data[i * texCoord1Stride + 1]);
+            } else {
                 vertex.m_texCoord1 = glm::vec2(0.0f, 0.0f);
             }
 
             // Color (default to white if not provided)
-            if (colorData)
-            {
-                vertex.m_color = glm::vec4(colorData[i * colorStride + 0], colorData[i * colorStride + 1],
-                                           colorData[i * colorStride + 2], colorData[i * colorStride + 3]);
-            }
-            else
-            {
+            if (colorData) {
+                vertex.m_color =
+                    glm::vec4(colorData[i * colorStride + 0], colorData[i * colorStride + 1],
+                              colorData[i * colorStride + 2], colorData[i * colorStride + 3]);
+            } else {
                 vertex.m_color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
             }
 
@@ -202,73 +189,55 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
         }
 
         // Access indices (if present)
-        if (primitive.indices >= 0)
-        {
-            const auto &indexAccessor = model.accessors[primitive.indices];
-            const auto &indexBufferView = model.bufferViews[indexAccessor.bufferView];
-            const auto &indexBuffer = model.buffers[indexBufferView.buffer];
-            const void *indexData = indexBuffer.data.data() + indexBufferView.byteOffset + indexAccessor.byteOffset;
+        if (primitive.indices >= 0) {
+            const auto& indexAccessor = model.accessors[primitive.indices];
+            const auto& indexBufferView = model.bufferViews[indexAccessor.bufferView];
+            const auto& indexBuffer = model.buffers[indexBufferView.buffer];
+            const void *indexData =
+                indexBuffer.data.data() + indexBufferView.byteOffset + indexAccessor.byteOffset;
 
-            if (indexAccessor.count > std::numeric_limits<uint32_t>::max())
-            {
-                std::cerr << "Error: Index accessor count exceeds 32-bit limit: " << indexAccessor.count << std::endl;
+            if (indexAccessor.count > std::numeric_limits<uint32_t>::max()) {
+                std::cerr << "Error: Index accessor count exceeds 32-bit limit: "
+                          << indexAccessor.count << std::endl;
                 subMesh.m_indexCount = std::numeric_limits<uint32_t>::max();
-            }
-            else
-            {
+            } else {
                 subMesh.m_indexCount = static_cast<uint32_t>(indexAccessor.count);
             }
 
-            if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE)
-            {
+            if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE) {
                 const uint8_t *data = reinterpret_cast<const uint8_t *>(indexData);
-                for (size_t i = 0; i < indexAccessor.count; ++i)
-                {
+                for (size_t i = 0; i < indexAccessor.count; ++i) {
                     indices.push_back(vertexOffset + data[i]);
                 }
-            }
-            else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
-            {
+            } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
                 const uint16_t *data = reinterpret_cast<const uint16_t *>(indexData);
-                for (size_t i = 0; i < indexAccessor.count; ++i)
-                {
+                for (size_t i = 0; i < indexAccessor.count; ++i) {
                     indices.push_back(vertexOffset + static_cast<uint32_t>(data[i]));
                 }
-            }
-            else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT)
-            {
+            } else if (indexAccessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT) {
                 const uint32_t *data = reinterpret_cast<const uint32_t *>(indexData);
-                for (size_t i = 0; i < indexAccessor.count; ++i)
-                {
+                for (size_t i = 0; i < indexAccessor.count; ++i) {
                     indices.push_back(vertexOffset + data[i]);
                 }
-            }
-            else
-            {
+            } else {
                 assert(false && "Invalid index accessor component type");
             }
-        }
-        else
-        {
+        } else {
             // Non-indexed mesh: generate sequential indices
-            if (positionAccessor.count > std::numeric_limits<uint32_t>::max())
-            {
-                std::cerr << "Error: Position accessor count exceeds 32-bit limit: " << positionAccessor.count << std::endl;
+            if (positionAccessor.count > std::numeric_limits<uint32_t>::max()) {
+                std::cerr << "Error: Position accessor count exceeds 32-bit limit: "
+                          << positionAccessor.count << std::endl;
                 subMesh.m_indexCount = std::numeric_limits<uint32_t>::max();
-            }
-            else
-            {
+            } else {
                 subMesh.m_indexCount = static_cast<uint32_t>(positionAccessor.count);
             }
-            
-            for (uint32_t i = 0; i < positionAccessor.count; ++i)
-            {
+
+            for (uint32_t i = 0; i < positionAccessor.count; ++i) {
                 indices.push_back(vertexOffset + i);
             }
         }
 
-        if (!tangentData)
-        {
+        if (!tangentData) {
             // Generate tangents if not provided
             std::cout << "Generating tangents for submesh " << subMeshes.size() << std::endl;
             mesh_utils::GenerateTangents(subMesh, vertices, indices);
@@ -278,38 +247,33 @@ void ProcessMesh(const tinygltf::Model &model, const tinygltf::Mesh &mesh, std::
     }
 }
 
-void ProcessNode(const tinygltf::Model &model, int nodeIndex, const glm::mat4 &parentTransform,
-                 std::vector<Model::Vertex> &vertices, std::vector<uint32_t> &indices,
-                 std::vector<Model::SubMesh> &subMeshes)
-{
-    const tinygltf::Node &node = model.nodes[nodeIndex];
+void ProcessNode(const tinygltf::Model& model, int nodeIndex, const glm::mat4& parentTransform,
+                 std::vector<Model::Vertex>& vertices, std::vector<uint32_t>& indices,
+                 std::vector<Model::SubMesh>& subMeshes) {
+    const tinygltf::Node& node = model.nodes[nodeIndex];
 
     // Compute the local transformation matrix
     glm::mat4 localTransform(1.0f);
 
     // If the node has a transformation matrix, use it
-    if (!node.matrix.empty())
-    {
+    if (!node.matrix.empty()) {
         localTransform = glm::make_mat4(node.matrix.data());
-    }
-    else
-    {
+    } else {
         // Otherwise, compute the transformation from translation, rotation, and scale
-        if (!node.translation.empty())
-        {
-            localTransform = glm::translate(localTransform,
-                                            glm::vec3(node.translation[0], node.translation[1], node.translation[2]));
+        if (!node.translation.empty()) {
+            localTransform =
+                glm::translate(localTransform, glm::vec3(node.translation[0], node.translation[1],
+                                                         node.translation[2]));
         }
-        if (!node.rotation.empty())
-        {
-            glm::quat rotationQuat =
-                glm::quat(static_cast<float>(node.rotation[3]), static_cast<float>(node.rotation[0]),
-                          static_cast<float>(node.rotation[1]), static_cast<float>(node.rotation[2]));
+        if (!node.rotation.empty()) {
+            glm::quat rotationQuat = glm::quat(
+                static_cast<float>(node.rotation[3]), static_cast<float>(node.rotation[0]),
+                static_cast<float>(node.rotation[1]), static_cast<float>(node.rotation[2]));
             localTransform *= glm::mat4_cast(rotationQuat);
         }
-        if (!node.scale.empty())
-        {
-            localTransform = glm::scale(localTransform, glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
+        if (!node.scale.empty()) {
+            localTransform =
+                glm::scale(localTransform, glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
         }
     }
 
@@ -317,21 +281,18 @@ void ProcessNode(const tinygltf::Model &model, int nodeIndex, const glm::mat4 &p
     glm::mat4 globalTransform = parentTransform * localTransform;
 
     // If this node has a mesh, process it
-    if (node.mesh >= 0)
-    {
-        const tinygltf::Mesh &mesh = model.meshes[node.mesh];
+    if (node.mesh >= 0) {
+        const tinygltf::Mesh& mesh = model.meshes[node.mesh];
         ProcessMesh(model, mesh, vertices, indices, subMeshes, globalTransform);
     }
 
     // Recursively process children nodes
-    for (int childIndex : node.children)
-    {
+    for (int childIndex : node.children) {
         ProcessNode(model, childIndex, globalTransform, vertices, indices, subMeshes);
     }
 }
 
-void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Material> &materials)
-{
+void ProcessMaterial(const tinygltf::Material& material, std::vector<Model::Material>& materials) {
     Model::Material mat;
 
     // Copy scalar and vector properties
@@ -345,16 +306,11 @@ void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Mate
     mat.m_doubleSided = material.doubleSided;
 
     // Set alpha blending mode
-    if (material.alphaMode == "MASK")
-    {
+    if (material.alphaMode == "MASK") {
         mat.m_alphaMode = Model::AlphaMode::Mask;
-    }
-    else if (material.alphaMode == "BLEND")
-    {
+    } else if (material.alphaMode == "BLEND") {
         mat.m_alphaMode = Model::AlphaMode::Blend;
-    }
-    else
-    {
+    } else {
         mat.m_alphaMode = Model::AlphaMode::Opaque;
     }
 
@@ -369,15 +325,20 @@ void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Mate
 
     // Print material properties (for debugging, remove later)
     std::cout << "Material " << materials.size() - 1 << ":" << std::endl;
-    std::cout << "  Base Color Factor: " << mat.m_baseColorFactor.r << ", " << mat.m_baseColorFactor.g << ", "
-              << mat.m_baseColorFactor.b << ", " << mat.m_baseColorFactor.a << std::endl;
-    std::cout << "  Emissive Factor: " << mat.m_emissiveFactor.r << ", " << mat.m_emissiveFactor.g << ", "
-              << mat.m_emissiveFactor.b << std::endl;
+    std::cout << "  Base Color Factor: " << mat.m_baseColorFactor.r << ", "
+              << mat.m_baseColorFactor.g << ", " << mat.m_baseColorFactor.b << ", "
+              << mat.m_baseColorFactor.a << std::endl;
+    std::cout << "  Emissive Factor: " << mat.m_emissiveFactor.r << ", " << mat.m_emissiveFactor.g
+              << ", " << mat.m_emissiveFactor.b << std::endl;
     std::cout << "  Metallic Factor: " << mat.m_metallicFactor << std::endl;
     std::cout << "  Roughness Factor: " << mat.m_roughnessFactor << std::endl;
     std::cout << "  Normal Scale: " << mat.m_normalScale << std::endl;
     std::cout << "  Occlusion Strength: " << mat.m_occlusionStrength << std::endl;
-    std::cout << "  Alpha Mode: " << (mat.m_alphaMode == Model::AlphaMode::Mask ? "MASK" : (mat.m_alphaMode == Model::AlphaMode::Blend ? "BLEND" : "OPAQUE")) << std::endl;
+    std::cout << "  Alpha Mode: "
+              << (mat.m_alphaMode == Model::AlphaMode::Mask
+                      ? "MASK"
+                      : (mat.m_alphaMode == Model::AlphaMode::Blend ? "BLEND" : "OPAQUE"))
+              << std::endl;
     std::cout << "  Alpha Cutoff: " << mat.m_alphaCutoff << std::endl;
     std::cout << "  Double Sided: " << mat.m_doubleSided << std::endl;
     std::cout << "  Base Color Texture: " << mat.m_baseColorTexture << std::endl;
@@ -388,8 +349,8 @@ void ProcessMaterial(const tinygltf::Material &material, std::vector<Model::Mate
     std::cout << "--------------------------------" << std::endl;
 }
 
-void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std::vector<Model::Texture> &textures)
-{
+void ProcessImage(const tinygltf::Image& image, const std::string& basePath,
+                  std::vector<Model::Texture>& textures) {
 
     Model::Texture texture;
     texture.m_name = image.name;
@@ -397,59 +358,49 @@ void ProcessImage(const tinygltf::Image &image, const std::string &basePath, std
     texture.m_height = image.height;
     texture.m_components = image.component;
 
-    if (!image.image.empty())
-    {
+    if (!image.image.empty()) {
         // Image data is embedded
         texture.m_data = image.image;
-    }
-    else if (!image.uri.empty())
-    {
+    } else if (!image.uri.empty()) {
         // Image data is external, load it using stb_image
         std::string imagePath = basePath + "/" + image.uri;
         int width, height, components;
-        unsigned char *data = stbi_load(imagePath.c_str(), &width, &height, &components, 4 /* force 4 channels */);
-        if (data)
-        {
+        unsigned char *data =
+            stbi_load(imagePath.c_str(), &width, &height, &components, 4 /* force 4 channels */);
+        if (data) {
             texture.m_width = width;
             texture.m_height = height;
             texture.m_components = components;
             texture.m_data = std::vector<uint8_t>(data, data + (width * height * components));
             stbi_image_free(data);
-        }
-        else
-        {
+        } else {
             std::cerr << "Failed to load image: " << imagePath << std::endl;
         }
-    }
-    else
-    {
-        std::cerr << "Warning: Texture " << texture.m_name << " has no valid image source." << std::endl;
+    } else {
+        std::cerr << "Warning: Texture " << texture.m_name << " has no valid image source."
+                  << std::endl;
     }
 
     textures.push_back(texture);
 }
 
-void ProcessModel(const tinygltf::Model &model, std::vector<Model::Vertex> &vertices, std::vector<uint32_t> &indices,
-                  std::vector<Model::Material> &materials, std::vector<Model::Texture> &textures,
-                  std::vector<Model::SubMesh> &subMeshes)
-{
-    if (model.scenes.size() > 0)
-    {
-        const tinygltf::Scene &scene = model.scenes[model.defaultScene > -1 ? model.defaultScene : 0];
+void ProcessModel(const tinygltf::Model& model, std::vector<Model::Vertex>& vertices,
+                  std::vector<uint32_t>& indices, std::vector<Model::Material>& materials,
+                  std::vector<Model::Texture>& textures, std::vector<Model::SubMesh>& subMeshes) {
+    if (model.scenes.size() > 0) {
+        const tinygltf::Scene& scene =
+            model.scenes[model.defaultScene > -1 ? model.defaultScene : 0];
 
-        for (int nodeIndex : scene.nodes)
-        {
+        for (int nodeIndex : scene.nodes) {
             ProcessNode(model, nodeIndex, glm::mat4(1.0f), vertices, indices, subMeshes);
         }
     }
 
-    for (const auto &material : model.materials)
-    {
+    for (const auto& material : model.materials) {
         ProcessMaterial(material, materials);
     }
 
-    for (const auto &image : model.images)
-    {
+    for (const auto& image : model.images) {
         ProcessImage(image, "", textures);
     }
 }
@@ -459,8 +410,7 @@ void ProcessModel(const tinygltf::Model &model, std::vector<Model::Vertex> &vert
 //----------------------------------------------------------------------
 // Model Class Implementation
 
-void Model::Load(const std::string &filename, const uint8_t *data, uint32_t size)
-{
+void Model::Load(const std::string& filename, const uint8_t *data, uint32_t size) {
     auto t0 = std::chrono::high_resolution_clock::now();
 
     tinygltf::Model model;
@@ -472,13 +422,11 @@ void Model::Load(const std::string &filename, const uint8_t *data, uint32_t size
     if (data) {
         // Load from memory, binary file
         result = loader.LoadBinaryFromMemory(&model, &err, &warn, data, size);
-    }
-    else {
+    } else {
         // Load from file, either ASCII or binary
-    
+
         const std::string basePath = filename.substr(0, filename.find_last_of("/"));
         std::string extension = filename.substr(filename.find_last_of(".") + 1);
-        
 
         if (extension == "gltf") {
             result = loader.LoadASCIIFromFile(&model, &err, &warn, filename);
@@ -491,8 +439,7 @@ void Model::Load(const std::string &filename, const uint8_t *data, uint32_t size
     }
 
     // If succesful, process the model
-    if (result)
-    {
+    if (result) {
         ClearData();
         auto t1 = std::chrono::high_resolution_clock::now();
         ProcessModel(model, m_vertices, m_indices, m_materials, m_textures, m_subMeshes);
@@ -500,22 +447,17 @@ void Model::Load(const std::string &filename, const uint8_t *data, uint32_t size
         auto t2 = std::chrono::high_resolution_clock::now();
         double totalMs = std::chrono::duration<double, std::milli>(t2 - t0).count();
         double processMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
-        std::cout << "Loaded model in " << totalMs << "ms (processing took: " 
-                  << processMs << "ms)" << std::endl;
-    }
-    else
-    {
+        std::cout << "Loaded model in " << totalMs << "ms (processing took: " << processMs << "ms)"
+                  << std::endl;
+    } else {
         std::cerr << "Failed to load model: " << err << std::endl;
     }
 }
 
-void Model::Update(float deltaTime, bool animate)
-{
-    if (animate)
-    {
+void Model::Update(float deltaTime, bool animate) {
+    if (animate) {
         m_rotationAngle += deltaTime; // Increment the rotation angle
-        if (m_rotationAngle > 2.0f * PI)
-        {
+        if (m_rotationAngle > 2.0f * PI) {
             m_rotationAngle -= 2.0f * PI; // Keep the angle within [0, 2π]
         }
     }
@@ -523,58 +465,47 @@ void Model::Update(float deltaTime, bool animate)
     m_transform = glm::rotate(glm::mat4(1.0f), -m_rotationAngle, glm::vec3(0.0f, 1.0f, 0.0f));
 }
 
-void Model::ResetOrientation() noexcept
-{
+void Model::ResetOrientation() noexcept {
     m_rotationAngle = 0.0f;
 }
 
-const glm::mat4 &Model::GetTransform() const noexcept
-{
+const glm::mat4& Model::GetTransform() const noexcept {
     return m_transform;
 }
 
-void Model::GetBounds(glm::vec3 &minBounds, glm::vec3 &maxBounds) const noexcept
-{
+void Model::GetBounds(glm::vec3& minBounds, glm::vec3& maxBounds) const noexcept {
     minBounds = m_minBounds;
     maxBounds = m_maxBounds;
 }
 
-const std::vector<Model::Vertex> &Model::GetVertices() const noexcept
-{
+const std::vector<Model::Vertex>& Model::GetVertices() const noexcept {
     return m_vertices;
 }
 
-const std::vector<uint32_t> &Model::GetIndices() const noexcept
-{
+const std::vector<uint32_t>& Model::GetIndices() const noexcept {
     return m_indices;
 }
 
-const std::vector<Model::Material> &Model::GetMaterials() const noexcept
-{
+const std::vector<Model::Material>& Model::GetMaterials() const noexcept {
     return m_materials;
 }
 
-const std::vector<Model::Texture> &Model::GetTextures() const noexcept
-{
+const std::vector<Model::Texture>& Model::GetTextures() const noexcept {
     return m_textures;
 }
 
-const Model::Texture *Model::GetTexture(int index) const noexcept
-{
-    if (index >= 0 && index < static_cast<int>(m_textures.size()))
-    {
+const Model::Texture *Model::GetTexture(int index) const noexcept {
+    if (index >= 0 && index < static_cast<int>(m_textures.size())) {
         return &m_textures[index];
     }
     return nullptr;
 }
 
-const std::vector<Model::SubMesh> &Model::GetSubMeshes() const noexcept
-{
+const std::vector<Model::SubMesh>& Model::GetSubMeshes() const noexcept {
     return m_subMeshes;
 }
 
-void Model::ClearData()
-{
+void Model::ClearData() {
     m_transform = glm::mat4(1.0f);
     m_rotationAngle = 0.0f;
     m_minBounds = glm::vec3(std::numeric_limits<float>::max());
@@ -586,14 +517,12 @@ void Model::ClearData()
     m_subMeshes.clear();
 }
 
-void Model::RecomputeBounds()
-{
+void Model::RecomputeBounds() {
     m_minBounds = glm::vec3(std::numeric_limits<float>::max());
     m_maxBounds = glm::vec3(std::numeric_limits<float>::lowest());
 
     // Calculate the bounding box of the model
-    for (const auto &vertex : m_vertices)
-    {
+    for (const auto& vertex : m_vertices) {
         m_minBounds = glm::min(m_minBounds, vertex.m_position);
         m_maxBounds = glm::max(m_maxBounds, vertex.m_position);
     }

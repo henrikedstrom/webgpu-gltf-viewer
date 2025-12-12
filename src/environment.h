@@ -11,12 +11,10 @@
 // Project Headers
 
 // Environment Class
-class Environment
-{
+class Environment {
   public:
     // Types
-    struct Texture
-    {
+    struct Texture {
         std::string m_name;        // Name of the texture
         uint32_t m_width = 0;      // Width of the texture
         uint32_t m_height = 0;     // Height of the texture
@@ -28,18 +26,18 @@ class Environment
     Environment() = default;
 
     // Rule of 5
-    Environment(const Environment &) = default;
-    Environment &operator=(const Environment &) = default;
-    Environment(Environment &&) = default;
-    Environment &operator=(Environment &&) = default;
+    Environment(const Environment&) = default;
+    Environment& operator=(const Environment&) = default;
+    Environment(Environment&&) = default;
+    Environment& operator=(Environment&&) = default;
 
     // Public Interface
-    bool Load(const std::string &filename, const uint8_t *data = 0, uint32_t size = 0);
+    bool Load(const std::string& filename, const uint8_t *data = 0, uint32_t size = 0);
     void UpdateRotation(float rotationAngle);
 
     // Accessors
-    const glm::mat4 &GetTransform() const noexcept;
-    const Texture &GetTexture() const noexcept;
+    const glm::mat4& GetTransform() const noexcept;
+    const Texture& GetTexture() const noexcept;
 
   private:
     // Private Member Variables

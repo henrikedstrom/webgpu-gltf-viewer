@@ -10,21 +10,19 @@
 //----------------------------------------------------------------------
 // Internal Constants
 
-namespace
-{
+namespace {
 constexpr float kTumbleSpeed = 0.004f;
 constexpr float kPanSpeed = 0.01f;
 constexpr float kZoomSpeed = 0.01f;
 constexpr float kNearClipFactor = 0.01f;
 constexpr float kFarClipFactor = 100.0f;
-constexpr float kTiltClamp = 0.98f; // Restricts the forward vector's vertical component to avoid gimbal lock.
+constexpr float kTiltClamp = 0.98f; // Aavoid gimbal lock.
 } // namespace
 
 //----------------------------------------------------------------------
 // Camera Class Implementation
 
-void Camera::Tumble(int dx, int dy)
-{
+void Camera::Tumble(int dx, int dy) {
     // Rotate around world Y-axis (up-axis)
     {
         // Calculate the offset from the camera to the target
@@ -68,8 +66,7 @@ void Camera::Tumble(int dx, int dy)
 
         // Clamp the forward vector to prevent gimbal lock
         m_forward = glm::normalize(m_target - m_position);
-        if (std::abs(m_forward[1]) > kTiltClamp)
-        {
+        if (std::abs(m_forward[1]) > kTiltClamp) {
             m_position = originalPosition;
             m_forward = originalForward;
         }
@@ -79,16 +76,14 @@ void Camera::Tumble(int dx, int dy)
     }
 }
 
-void Camera::Zoom(int dx, int dy)
-{
+void Camera::Zoom(int dx, int dy) {
     const float delta = (-dx + dy) * m_zoomFactor;
 
     // Move the camera along the forward vector
     m_position += m_forward * delta;
 }
 
-void Camera::Pan(int dx, int dy)
-{
+void Camera::Pan(int dx, int dy) {
     const float delta_x = -dx * m_panFactor;
     const float delta_y = dy * m_panFactor;
 
@@ -97,11 +92,9 @@ void Camera::Pan(int dx, int dy)
     m_target += m_up * delta_y + m_right * delta_x;
 }
 
-void Camera::ResetToModel(glm::vec3 minBounds, glm::vec3 maxBounds)
-{
+void Camera::ResetToModel(glm::vec3 minBounds, glm::vec3 maxBounds) {
     // Check for empty bounds
-    if (glm::any(glm::lessThanEqual(maxBounds, minBounds)))
-    {
+    if (glm::any(glm::lessThanEqual(maxBounds, minBounds))) {
         // Default to unit cube if bounds are invalid
         minBounds = glm::vec3(-0.5f);
         maxBounds = glm::vec3(0.5f);
@@ -128,38 +121,31 @@ void Camera::ResetToModel(glm::vec3 minBounds, glm::vec3 maxBounds)
     UpdateCameraVectors();
 }
 
-void Camera::ResizeViewport(int width, int height)
-{
-    if (width > 0 && height > 0)
-    {
+void Camera::ResizeViewport(int width, int height) {
+    if (width > 0 && height > 0) {
         m_width = width;
         m_height = height;
     }
 }
 
-glm::mat4 Camera::GetViewMatrix() const noexcept
-{
+glm::mat4 Camera::GetViewMatrix() const noexcept {
     return glm::lookAt(m_position, m_target, m_up);
 }
 
-glm::mat4 Camera::GetProjectionMatrix() const noexcept
-{
+glm::mat4 Camera::GetProjectionMatrix() const noexcept {
     const float ratio = static_cast<float>(m_width) / m_height;
     return glm::perspective(glm::radians(kDefaultFOV), ratio, m_near, m_far);
 }
 
-glm::vec3 Camera::GetWorldPosition() const noexcept
-{
+glm::vec3 Camera::GetWorldPosition() const noexcept {
     return m_position;
 }
 
-float Camera::GetFOV() const noexcept
-{
+float Camera::GetFOV() const noexcept {
     return kDefaultFOV;
 }
 
-void Camera::UpdateCameraVectors()
-{
+void Camera::UpdateCameraVectors() {
     m_forward = glm::normalize(m_target - m_position);
     m_right = glm::normalize(glm::cross(m_forward, m_baseUp));
     m_up = glm::normalize(glm::cross(m_right, m_forward));
