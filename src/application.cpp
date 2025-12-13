@@ -29,82 +29,101 @@ extern "C" void wasm_OnDropFile(const char *filename, uint8_t *data, int length)
 
 void EmscriptenSetDropCallback() {
     // Set up the drop event listener in JavaScript
+    // clang-format off
     EM_ASM(
-
-        function showErrorPopup(message) {
-            let popup = document.createElement("div");
+        const showErrorPopup = (message) => {
+            const popup = document.createElement('div');
             popup.innerText = message;
-            popup.style.position = "fixed";
-            popup.style.top = "50%";
-            popup.style.left = "50%";
-            popup.style.transform = "translate(-50%, -50%)";
-            popup.style.backgroundColor = "rgba(255, 0, 0, 0.8)";
-            popup.style.color = "white";
-            popup.style.padding = "15px 25px";
-            popup.style.borderRadius = "8px";
-            popup.style.fontSize = "18px";
-            popup.style.fontWeight = "bold";
-            popup.style.zIndex = "1000";
+            popup.style.position = 'fixed';
+            popup.style.top = '50%';
+            popup.style.left = '50%';
+            popup.style.transform = 'translate(-50%, -50%)';
+            popup.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+            popup.style.color = 'white';
+            popup.style.padding = '15px 25px';
+            popup.style.borderRadius = '8px';
+            popup.style.fontSize = '18px';
+            popup.style.fontWeight = 'bold';
+            popup.style.zIndex = '1000';
 
             document.body.appendChild(popup);
 
-            setTimeout(() = > { popup.remove(); }, 3000); // Auto-hide after 3 seconds
+            // Auto-hide after 3 seconds.
+            setTimeout(() => {
+                popup.remove();
+            }, 3000);
 
             console.error('ERROR: ' + message);
+        };
+
+        const canvas = document.getElementById('canvas');
+        if (!canvas) {
+            console.error('ERROR: Canvas element with id="canvas" not found.');
+            return;
         }
 
-        var canvas = document.getElementById('canvas');
+        canvas.ondragover = (event) => {
+            event.preventDefault();
+        };
 
-        canvas.ondragover = function(event) { event.preventDefault(); };
+        canvas.ondrop = async (event) => {
+            event.preventDefault();
 
-        canvas.ondrop =
-            async function(event) {
-                event.preventDefault();
+            const file = event.dataTransfer.files[0];
+            if (!file) {
+                return;
+            }
 
-                let file = event.dataTransfer.files[0];
-                if (!file) {
+            const extension = file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase();
+            if (extension !== 'glb' && extension !== 'hdr') {
+                showErrorPopup(
+                    'Unsupported file type: ' + file.name +
+                        '. Only .glb and .hdr files are supported.'
+                );
+                return;
+            }
+
+            console.log(
+                'Dropped file: ' + file.name + ' (Size: ' + file.size + ' bytes)'
+            );
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+
+                const dataPtr = Module._malloc(data.length);
+                if (!dataPtr) {
+                    showErrorPopup('Memory allocation failed for file data!');
                     return;
                 }
+                Module.HEAPU8.set(data, dataPtr);
 
-                var extension = file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
-                if (extension != "glb" && extension != "hdr") {
-                    showErrorPopup("Unsupported file type: " + file.name +
-                                   ". Only .glb and .hdr files are supported.");
-                    return;
-                }
-
-                console.log("Dropped file: " + file.name + " (Size: " + file.size + " bytes)");
-
-                let reader = new FileReader();
-                reader.onload = function(e) {
-                    let data = new Uint8Array(e.target.result);
-
-                    let dataPtr = Module._malloc(data.length);
-                    if (!dataPtr) {
-                        showErrorPopup("Memory allocation failed for file data!");
-                        return;
-                    }
-                    Module.HEAPU8.set(data, dataPtr);
-
-                    let nameLength = Module.lengthBytesUTF8(file.name) + 1;
-                    let filenamePtr = Module._malloc(nameLength);
-                    if (!filenamePtr) {
-                        showErrorPopup("Memory allocation failed for filename!");
-                        Module._free(dataPtr);
-                        return;
-                    }
-                    Module.stringToUTF8(file.name, filenamePtr, nameLength);
-
-                    console.log("Sending file '" + file.name + "' (Size: " + data.length +
-                                " bytes) to C++");
-                    Module.ccall("wasm_OnDropFile", "void", [ "number", "number", "number" ],
-                                 [ filenamePtr, dataPtr, data.length ]);
-
+                const nameLength = Module.lengthBytesUTF8(file.name) + 1;
+                const filenamePtr = Module._malloc(nameLength);
+                if (!filenamePtr) {
+                    showErrorPopup('Memory allocation failed for filename!');
                     Module._free(dataPtr);
-                    Module._free(filenamePtr);
-                };
-                reader.readAsArrayBuffer(file);
-            };);
+                    return;
+                }
+                Module.stringToUTF8(file.name, filenamePtr, nameLength);
+
+                console.log(
+                    "Sending file '" + file.name + "' (Size: " + data.length + ' bytes) to C++'
+                );
+                Module.ccall(
+                    'wasm_OnDropFile',
+                    'void',
+                    ['number', 'number', 'number'],
+                    [filenamePtr, dataPtr, data.length]
+                );
+
+                Module._free(dataPtr);
+                Module._free(filenamePtr);
+            };
+            reader.readAsArrayBuffer(file);
+        };
+    );
+    // clang-format on
 }
 
 #endif // defined(__EMSCRIPTEN__)
