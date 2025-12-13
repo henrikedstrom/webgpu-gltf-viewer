@@ -3,7 +3,7 @@
 
 ## Requirements
 
-For Web builds, make sure Emscripten is installed first.
+For Web builds, install Emscripten (tested with version in [`.emscripten-version`](.emscripten-version)).
 
 For native builds, pull Dawn as a submodule:
 

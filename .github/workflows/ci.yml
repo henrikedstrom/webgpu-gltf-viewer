@@ -1,0 +1,95 @@
+name: CI
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # Native builds for Windows, macOS, and Linux
+  native:
+    name: Native (${{ matrix.os }}, ${{ matrix.build_type }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        build_type: [Debug, Release]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxext-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libgl1-mesa-dev
+
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: build-${{ matrix.build_type }}/_deps
+          key: ${{ runner.os }}-cmake-deps-${{ matrix.build_type }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
+          restore-keys: |
+            ${{ runner.os }}-cmake-deps-${{ matrix.build_type }}-
+
+      - name: Configure CMake
+        run: cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -S . -B build-${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel 4
+
+  # Web build using Emscripten (only on Linux, output is platform-independent)
+  web:
+    name: Web (${{ matrix.build_type }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Read Emscripten version
+        shell: bash
+        run: echo "EMSDK_VERSION=$(tr -d '\r\n' < .emscripten-version)" >> "$GITHUB_ENV"
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: build-web-${{ matrix.build_type }}/_deps
+          key: web-cmake-deps-${{ matrix.build_type }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake', '.emscripten-version') }}
+          restore-keys: |
+            web-cmake-deps-${{ matrix.build_type }}-
+
+      - name: Configure CMake with Emscripten
+        run: emcmake cmake -S . -B build-web-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build-web-${{ matrix.build_type }} --parallel 4
+
