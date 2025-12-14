@@ -58,17 +58,19 @@ void PanoramaToCubemapConverter::UploadAndConvert(const Environment::Texture& pa
 
     // Upload the texture data
     wgpu::Extent3D textureSize = {width, height, 1};
-    wgpu::ImageCopyTexture imageCopyTexture{};
-    imageCopyTexture.texture = panoramaTexture;
-    imageCopyTexture.mipLevel = 0;
-    imageCopyTexture.origin = {0, 0, 0};
-    imageCopyTexture.aspect = wgpu::TextureAspect::All;
-    wgpu::TextureDataLayout source{};
+    wgpu::TexelCopyTextureInfo destination{};
+    destination.texture = panoramaTexture;
+    destination.mipLevel = 0;
+    destination.origin = {0, 0, 0};
+    destination.aspect = wgpu::TextureAspect::All;
+
+    wgpu::TexelCopyBufferLayout source{};
     source.offset = 0;
     source.bytesPerRow = static_cast<uint32_t>(4 * width * sizeof(float));
     source.rowsPerImage = height;
-    m_device.GetQueue().WriteTexture(&imageCopyTexture, data, 4 * width * height * sizeof(float),
-                                     &source, &textureSize);
+
+    const size_t dataSize = static_cast<size_t>(4) * width * height * sizeof(float);
+    m_device.GetQueue().WriteTexture(&destination, data, dataSize, &source, &textureSize);
 
     // Create views for the input panorama and output cubemap.
     wgpu::TextureViewDescriptor inputViewDesc{};
@@ -214,11 +216,8 @@ void PanoramaToCubemapConverter::InitBindGroups() {
 void PanoramaToCubemapConverter::InitComputePipeline() {
     std::string shaderCode = LoadShaderFile("./assets/shaders/panorama_to_cubemap.wgsl");
 
-    wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
-    wgslDesc.code = shaderCode.c_str();
-
-    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
-    shaderModuleDescriptor.nextInChain = &wgslDesc;
+    wgpu::ShaderSourceWGSL wgsl{{.nextInChain = nullptr, .code = shaderCode.c_str()}};
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgsl};
     wgpu::ShaderModule computeShaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::BindGroupLayout pipelineBindGroups[] = {

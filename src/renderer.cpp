@@ -85,20 +85,19 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format,
         texture = device.CreateTexture(&finalDesc);
 
         // Upload level 0
-        wgpu::ImageCopyTexture imageCopyTexture{};
-        imageCopyTexture.texture = texture;
-        imageCopyTexture.mipLevel = 0;
-        imageCopyTexture.origin = {0, 0, 0};
-        imageCopyTexture.aspect = wgpu::TextureAspect::All;
+        wgpu::TexelCopyTextureInfo destination{};
+        destination.texture = texture;
+        destination.mipLevel = 0;
+        destination.origin = {0, 0, 0};
+        destination.aspect = wgpu::TextureAspect::All;
 
-        wgpu::TextureDataLayout source{};
+        wgpu::TexelCopyBufferLayout source{};
         source.offset = 0;
         source.bytesPerRow = 4 * width * sizeof(uint8_t);
         source.rowsPerImage = height;
 
-        device.GetQueue().WriteTexture(&imageCopyTexture, data,
-                                       4 * width * height * sizeof(uint8_t), &source,
-                                       &finalDesc.size);
+        const size_t dataSize = static_cast<size_t>(4) * width * height * sizeof(uint8_t);
+        device.GetQueue().WriteTexture(&destination, data, dataSize, &source, &finalDesc.size);
 
         // Generate mips directly via render path
         mipmapGenerator.GenerateMipmaps(texture, finalDesc.size, kind);
@@ -115,20 +114,19 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format,
         wgpu::Texture intermediateTexture = device.CreateTexture(&textureDescriptor);
 
         // Upload the texture data to intermediate
-        wgpu::ImageCopyTexture imageCopyTexture{};
-        imageCopyTexture.texture = intermediateTexture;
-        imageCopyTexture.mipLevel = 0;
-        imageCopyTexture.origin = {0, 0, 0};
-        imageCopyTexture.aspect = wgpu::TextureAspect::All;
+        wgpu::TexelCopyTextureInfo destination{};
+        destination.texture = intermediateTexture;
+        destination.mipLevel = 0;
+        destination.origin = {0, 0, 0};
+        destination.aspect = wgpu::TextureAspect::All;
 
-        wgpu::TextureDataLayout source;
+        wgpu::TexelCopyBufferLayout source{};
         source.offset = 0;
         source.bytesPerRow = 4 * width * sizeof(uint8_t);
         source.rowsPerImage = height;
 
-        device.GetQueue().WriteTexture(&imageCopyTexture, data,
-                                       4 * width * height * sizeof(uint8_t), &source,
-                                       &textureDescriptor.size);
+        const size_t dataSize = static_cast<size_t>(4) * width * height * sizeof(uint8_t);
+        device.GetQueue().WriteTexture(&destination, data, dataSize, &source, &textureDescriptor.size);
 
         // Generate mipmaps via compute (normal-aware or linear depending on kind)
         mipmapGenerator.GenerateMipmaps(intermediateTexture, textureDescriptor.size,
@@ -147,12 +145,12 @@ void CreateTexture(const TextureInfo *textureInfo, wgpu::TextureFormat format,
         for (uint32_t level = 0; level < mipLevelCount; ++level) {
             uint32_t mipWidth = std::max(width >> level, 1u);
             uint32_t mipHeight = std::max(height >> level, 1u);
-            wgpu::ImageCopyTexture src{};
+            wgpu::TexelCopyTextureInfo src{};
             src.texture = intermediateTexture;
             src.mipLevel = level;
             src.origin = {0, 0, 0};
             src.aspect = wgpu::TextureAspect::All;
-            wgpu::ImageCopyTexture dst{};
+            wgpu::TexelCopyTextureInfo dst{};
             dst.texture = finalTexture;
             dst.mipLevel = level;
             dst.origin = {0, 0, 0};
@@ -204,27 +202,27 @@ void CreateEnvironmentTexture(wgpu::Device device, wgpu::TextureViewDimension ty
 void Renderer::Initialize(GLFWwindow *window, const Environment& environment, const Model& model,
                           uint32_t width, uint32_t height, const std::function<void()>& callback) {
     m_instance = wgpu::CreateInstance();
+    // Create the surface up-front so adapter selection can consider it.
+#if defined(__EMSCRIPTEN__)
+    (void)window; // Unused parameter
+    wgpu::EmscriptenSurfaceSourceCanvasHTMLSelector canvasDesc{};
+    canvasDesc.selector = "#canvas";
+    wgpu::SurfaceDescriptor surfaceDesc{};
+    surfaceDesc.nextInChain = &canvasDesc;
+    m_surface = m_instance.CreateSurface(&surfaceDesc);
+#else
+    m_surface = wgpu::glfw::CreateSurfaceForWindow(m_instance, window);
+#endif
+
     // Capture pointers to avoid dangling references across async callbacks
     const Environment *envPtr = &environment;
     const Model *modelPtr = &model;
-    GLFWwindow *windowPtr = window;
 
-    GetAdapter([this, callback, envPtr, modelPtr, width, height, windowPtr](wgpu::Adapter adapter) {
+    GetAdapter([this, callback, envPtr, modelPtr, width, height](wgpu::Adapter adapter) {
         m_adapter = adapter;
         GetDevice(
-            [this, callback, envPtr, modelPtr, width, height, windowPtr](wgpu::Device device) {
+            [this, callback, envPtr, modelPtr, width, height](wgpu::Device device) {
                 m_device = device;
-
-#if defined(__EMSCRIPTEN__)
-                (void)windowPtr; // Unused parameter
-                wgpu::SurfaceDescriptorFromCanvasHTMLSelector canvasDesc{};
-                canvasDesc.selector = "#canvas";
-                wgpu::SurfaceDescriptor surfaceDesc{};
-                surfaceDesc.nextInChain = &canvasDesc;
-                m_surface = m_instance.CreateSurface(&surfaceDesc);
-#else
-                m_surface = wgpu::glfw::CreateSurfaceForWindow(m_instance, windowPtr);
-#endif
 
                 InitGraphics(*envPtr, *modelPtr, width, height);
 
@@ -387,9 +385,9 @@ void Renderer::CreateDefaultTextures() {
         desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
         m_defaultSRGBTexture = m_device.CreateTexture(&desc);
 
-        wgpu::ImageCopyTexture dst{};
+        wgpu::TexelCopyTextureInfo dst{};
         dst.texture = m_defaultSRGBTexture;
-        wgpu::TextureDataLayout layout{};
+        wgpu::TexelCopyBufferLayout layout{};
         layout.bytesPerRow = 4;
         wgpu::Extent3D size{1, 1, 1};
         m_device.GetQueue().WriteTexture(&dst, whitePixel, sizeof(whitePixel), &layout, &size);
@@ -406,9 +404,9 @@ void Renderer::CreateDefaultTextures() {
         desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
         m_defaultUNormTexture = m_device.CreateTexture(&desc);
 
-        wgpu::ImageCopyTexture dst{};
+        wgpu::TexelCopyTextureInfo dst{};
         dst.texture = m_defaultUNormTexture;
-        wgpu::TextureDataLayout layout{};
+        wgpu::TexelCopyBufferLayout layout{};
         layout.bytesPerRow = 4;
         wgpu::Extent3D size{1, 1, 1};
         m_device.GetQueue().WriteTexture(&dst, whitePixel, sizeof(whitePixel), &layout, &size);
@@ -425,9 +423,9 @@ void Renderer::CreateDefaultTextures() {
         desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
         m_defaultNormalTexture = m_device.CreateTexture(&desc);
 
-        wgpu::ImageCopyTexture dst{};
+        wgpu::TexelCopyTextureInfo dst{};
         dst.texture = m_defaultNormalTexture;
-        wgpu::TextureDataLayout layout{};
+        wgpu::TexelCopyBufferLayout layout{};
         layout.bytesPerRow = 4;
         wgpu::Extent3D size{1, 1, 1};
         m_device.GetQueue().WriteTexture(&dst, flatNormal, sizeof(flatNormal), &layout, &size);
@@ -444,9 +442,9 @@ void Renderer::CreateDefaultTextures() {
         desc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
         m_defaultCubeTexture = m_device.CreateTexture(&desc);
 
-        wgpu::ImageCopyTexture dst{};
+        wgpu::TexelCopyTextureInfo dst{};
         dst.texture = m_defaultCubeTexture;
-        wgpu::TextureDataLayout layout{};
+        wgpu::TexelCopyBufferLayout layout{};
         layout.bytesPerRow = 4;
         wgpu::Extent3D size{1, 1, 1};
 
@@ -914,12 +912,9 @@ void Renderer::CreateGlobalBindGroup() {
 }
 
 void Renderer::CreateModelRenderPipelines() {
-    wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
     const std::string shader = LoadShaderFile("./assets/shaders/gltf_pbr.wgsl");
-    wgslDesc.code = shader.c_str();
-
-    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
-    shaderModuleDescriptor.nextInChain = &wgslDesc;
+    wgpu::ShaderSourceWGSL wgsl{{.nextInChain = nullptr, .code = shader.c_str()}};
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgsl};
     m_modelShaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::VertexAttribute vertexAttributes[] = {
@@ -1015,12 +1010,9 @@ void Renderer::CreateEnvironmentRenderPipeline() {
     depthStencilState.depthCompare = wgpu::CompareFunction::LessEqual;
 
     // Create an environment pipeline
-    wgpu::ShaderModuleWGSLDescriptor environmentWgslDesc{};
     const std::string environmentShader = LoadShaderFile("./assets/shaders/environment.wgsl");
-    environmentWgslDesc.code = environmentShader.c_str();
-
-    wgpu::ShaderModuleDescriptor environmentShaderModuleDescriptor{};
-    environmentShaderModuleDescriptor.nextInChain = &environmentWgslDesc;
+    wgpu::ShaderSourceWGSL environmentWgsl{{.nextInChain = nullptr, .code = environmentShader.c_str()}};
+    wgpu::ShaderModuleDescriptor environmentShaderModuleDescriptor{.nextInChain = &environmentWgsl};
     m_environmentShaderModule = m_device.CreateShaderModule(&environmentShaderModuleDescriptor);
 
     wgpu::FragmentState environmentFragmentState{};
@@ -1113,111 +1105,81 @@ void Renderer::GetAdapter(const std::function<void(wgpu::Adapter)>& callback) {
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
 
     m_instance.RequestAdapter(
-        &options,
-        [](WGPURequestAdapterStatus status, WGPUAdapter cAdapter, const char *message,
-           void *userdata) {
-            if (message) {
-                std::cerr << "RequestAdapter: " << message << std::endl;
+        &options, wgpu::CallbackMode::AllowSpontaneous,
+        [callback](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message) {
+            const std::string_view msg = message;
+            if (!msg.empty()) {
+                std::cerr << "RequestAdapter: " << msg << std::endl;
             }
-            if (status != WGPURequestAdapterStatus_Success) {
+            if (status != wgpu::RequestAdapterStatus::Success) {
                 std::cerr << "Failed to request adapter." << std::endl;
                 return;
             }
-            wgpu::Adapter adapter = wgpu::Adapter::Acquire(cAdapter);
-            auto cb = *static_cast<std::function<void(wgpu::Adapter)> *>(userdata);
-            cb(adapter); // Execute the callback
-            delete static_cast<std::function<void(wgpu::Adapter)> *>(userdata); // Clean up
-        },
-        new std::function<void(wgpu::Adapter)>(callback));
+            callback(std::move(adapter));
+        });
 }
 
 void Renderer::GetDevice(const std::function<void(wgpu::Device)>& callback) {
-    wgpu::DeviceDescriptor deviceDesc;
+    wgpu::DeviceDescriptor deviceDesc{};
 
     // Helper function to log device lost reasons
-    auto logDeviceLostReason = [](auto reason, const char *message) {
+    auto logDeviceLostReason = [](wgpu::DeviceLostReason reason, std::string_view message) {
         std::cerr << "Device lost: ";
         switch (reason) {
-#if defined(__EMSCRIPTEN__)
-        case WGPUDeviceLostReason_Unknown:
-            std::cerr << "[Reason: Unknown]";
-            break;
-        case WGPUDeviceLostReason_Destroyed:
-            std::cerr << "[Reason: Destroyed]";
-            break;
-#else
-        // Dawn/native device lost reasons
         case wgpu::DeviceLostReason::Unknown:
             std::cerr << "[Reason: Unknown]";
             break;
         case wgpu::DeviceLostReason::Destroyed:
             std::cerr << "[Reason: Destroyed]";
             break;
-        case wgpu::DeviceLostReason::InstanceDropped:
-            std::cerr << "[Reason: Instance Dropped]";
+        case wgpu::DeviceLostReason::CallbackCancelled:
+            std::cerr << "[Reason: Callback Cancelled]";
             break;
         case wgpu::DeviceLostReason::FailedCreation:
             std::cerr << "[Reason: Failed Creation]";
             break;
-#endif
         default:
             std::cerr << "[Reason: Unrecognized]";
             break;
         }
-        if (message) {
+        if (!message.empty()) {
             std::cerr << " - " << message << std::endl;
-        } else {
-            std::cerr << " - No message provided." << std::endl;
+            return;
         }
+        std::cerr << " - No message provided." << std::endl;
     };
 
-#if defined(__EMSCRIPTEN__)
-    // Set device lost callback for Emscripten
-    deviceDesc.deviceLostCallback = [](WGPUDeviceLostReason reason, const char *message,
-                                       void *userdata) {
-        auto logFn = static_cast<decltype(logDeviceLostReason) *>(userdata);
-        (*logFn)(reason, message); // Call the logging function
-    };
-    deviceDesc.deviceLostUserdata = &logDeviceLostReason; // Pass logDeviceLostReason as userdata
-#else
-    // Set device lost callback for Dawn/native
     deviceDesc.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
-        [logDeviceLostReason]([[maybe_unused]] const wgpu::Device& device,
+        [logDeviceLostReason]([[maybe_unused]] const wgpu::Device&,
                               wgpu::DeviceLostReason reason,
-                              const char *message) { logDeviceLostReason(reason, message); });
+                              wgpu::StringView message) {
+            const std::string_view msg = message;
+            logDeviceLostReason(reason, msg);
+        });
 
-    // Set uncaptured error callback for Dawn/native
-    deviceDesc.SetUncapturedErrorCallback([]([[maybe_unused]] const wgpu::Device& device,
-                                             [[maybe_unused]] wgpu::ErrorType type,
-                                             const char *message) {
-        std::cerr << "Uncaptured error: ";
-        if (message) {
-            std::cerr << message << std::endl;
-        } else {
-            std::cerr << "No message provided." << std::endl;
-        }
-        std::exit(EXIT_FAILURE); // Exit the application
-    });
-#endif
+    deviceDesc.SetUncapturedErrorCallback(
+        []([[maybe_unused]] const wgpu::Device&,
+           [[maybe_unused]] wgpu::ErrorType,
+           wgpu::StringView message) {
+            const std::string_view msg = message;
+            std::cerr << "Uncaptured error: " << msg << std::endl;
+            std::exit(EXIT_FAILURE);
+        });
 
     m_adapter.RequestDevice(
-        &deviceDesc,
-        [](WGPURequestDeviceStatus status, WGPUDevice cDevice, const char *message,
-           void *userdata) {
-            if (message) {
-                std::cerr << "RequestDevice: " << message << std::endl;
+        &deviceDesc, wgpu::CallbackMode::AllowSpontaneous,
+        [callback](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
+            const std::string_view msg = message;
+            if (!msg.empty()) {
+                std::cerr << "RequestDevice: " << msg << std::endl;
             }
-            if (status != WGPURequestDeviceStatus_Success) {
+            if (status != wgpu::RequestDeviceStatus::Success) {
                 std::cerr << "Failed to request device." << std::endl;
                 return;
             }
-            wgpu::Device device = wgpu::Device::Acquire(cDevice);
-            auto cb = *static_cast<std::function<void(wgpu::Device)> *>(userdata);
-            cb(device); // Execute the callback
-            delete static_cast<std::function<void(wgpu::Device)> *>(userdata); // Clean up
-        },
-        new std::function<void(wgpu::Device)>(callback));
+            callback(std::move(device));
+        });
 }
 
 std::string Renderer::LoadShaderFile(const std::string& filepath) const {

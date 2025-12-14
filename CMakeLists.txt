@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13) # CMake version check
+cmake_minimum_required(VERSION 3.22) # CMake version check
 project(app)                         # Create project "app"
 set(CMAKE_CXX_STANDARD 20)           # Enable C++20 standard
 
@@ -84,12 +84,30 @@ target_include_directories(app SYSTEM PRIVATE
 # Link GLM to the target
 target_link_libraries(app PRIVATE glm)
 
+# Dawn settings
+set(DAWN_FETCH_DEPENDENCIES ON CACHE BOOL "" FORCE)
+if (WIN32)
+  # Allow Dawn to fall back to loading system components from System32 on Windows.
+  # This avoids runtime failures when SDK redistributable DLLs are not present beside the app.
+  set(DAWN_FORCE_SYSTEM_COMPONENT_LOAD ON CACHE BOOL "" FORCE)
+endif()
+
+# Temporary MSVC toolset workaround (VS2026 / MSVC 19.50+):
+# SPIRV-Tools enables /WX on MSVC and MSVC 19.50 introduced new diagnostics in SPIRV-Tools headers.
+# Until this is fixed upstream, suppress the specific warnings that cause the build to fail.
+if (MSVC AND MSVC_VERSION GREATER_EQUAL 1950)
+  add_compile_options(/wd5232 /wd4717)
+endif()
+
+add_subdirectory("third_party/dawn" EXCLUDE_FROM_ALL)
+
 # Emscripten-specific settings
 if(EMSCRIPTEN)
   set_target_properties(app PROPERTIES SUFFIX ".html")
+  target_link_libraries(app PRIVATE emdawnwebgpu_cpp webgpu_glfw)
   set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
   target_link_options(app PRIVATE 
-    -sUSE_WEBGPU=1 
+    -sASYNCIFY=1 
     -sUSE_GLFW=3 
     -sALLOW_MEMORY_GROWTH=1 
     -O3
@@ -99,17 +117,5 @@ if(EMSCRIPTEN)
   )
 else()
   # Non-Emscripten settings
-  set(DAWN_FETCH_DEPENDENCIES ON)
-  add_subdirectory("third_party/dawn" EXCLUDE_FROM_ALL)
-  target_link_libraries(app PRIVATE dawn::webgpu_dawn glfw webgpu_glfw)
-
-  # Copy Dawn shared library to executable directory (Windows only)
-  if(WIN32)
-    add_custom_command(TARGET app POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      $<TARGET_FILE:dawn::webgpu_dawn>
-      $<TARGET_FILE_DIR:app>
-      COMMENT "Copying Dawn shared library to executable directory"
-    )
-  endif()
+  target_link_libraries(app PRIVATE webgpu_dawn webgpu_glfw glfw)
 endif()

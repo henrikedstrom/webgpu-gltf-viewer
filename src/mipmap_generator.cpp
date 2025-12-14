@@ -154,11 +154,8 @@ MipmapGenerator::createComputePipeline(const std::string& shaderPath,
                                        const std::vector<wgpu::BindGroupLayout>& layouts) {
     std::string shaderCode = LoadShaderFile(shaderPath);
 
-    wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
-    wgslDesc.code = shaderCode.c_str();
-
-    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
-    shaderModuleDescriptor.nextInChain = &wgslDesc;
+    wgpu::ShaderSourceWGSL wgsl{{.nextInChain = nullptr, .code = shaderCode.c_str()}};
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgsl};
     wgpu::ShaderModule computeShaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::PipelineLayoutDescriptor layoutDescriptor{};
@@ -179,11 +176,8 @@ wgpu::RenderPipeline MipmapGenerator::createRenderPipeline(const std::string& sh
                                                            wgpu::TextureFormat colorFormat) {
     std::string shaderCode = LoadShaderFile(shaderPath);
 
-    wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
-    wgslDesc.code = shaderCode.c_str();
-
-    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
-    shaderModuleDescriptor.nextInChain = &wgslDesc;
+    wgpu::ShaderSourceWGSL wgsl{{.nextInChain = nullptr, .code = shaderCode.c_str()}};
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgsl};
     wgpu::ShaderModule shaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     // Bind group layout: texture only (using textureLoad, no sampler needed)

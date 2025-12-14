@@ -106,8 +106,7 @@ void EnvironmentPreprocessor::GenerateMaps(const wgpu::Texture& environmentCubem
 
     // Set bind groups common to all faces.
     computePass.SetBindGroup(0, bindGroup0, 0, nullptr);
-    computePass.SetBindGroup(2, m_perMipBindGroups[0], 0,
-                             nullptr); // Make sure BG2 is valid (not used in first pass)
+    computePass.SetBindGroup(2, m_perMipBindGroups[0], 0, nullptr); // Make sure BG2 is valid
 
     // Dispatch a compute shader for each face of the cubemap.
     constexpr uint32_t numFaces = 6;
@@ -292,11 +291,8 @@ void EnvironmentPreprocessor::initBindGroups() {
 void EnvironmentPreprocessor::initComputePipelines() {
     std::string shaderCode = LoadShaderFile("./assets/shaders/environment_prefilter.wgsl");
 
-    wgpu::ShaderModuleWGSLDescriptor wgslDesc{};
-    wgslDesc.code = shaderCode.c_str();
-
-    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{};
-    shaderModuleDescriptor.nextInChain = &wgslDesc;
+    wgpu::ShaderSourceWGSL wgsl{{.nextInChain = nullptr, .code = shaderCode.c_str()}};
+    wgpu::ShaderModuleDescriptor shaderModuleDescriptor{.nextInChain = &wgsl};
     wgpu::ShaderModule computeShaderModule = m_device.CreateShaderModule(&shaderModuleDescriptor);
 
     wgpu::BindGroupLayout pipelineBindGroups[] = {
