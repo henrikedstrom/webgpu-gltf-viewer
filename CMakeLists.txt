@@ -53,6 +53,11 @@ if(MSVC)
   target_compile_options(app PRIVATE /W4 /WX)
 else()
   target_compile_options(app PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+  # GCC (Release): Dawn's generated headers can trigger -Wstrict-aliasing warnings under -O*.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(app PRIVATE $<$<CONFIG:Release>:-Wno-error=strict-aliasing>)
+  endif()
 endif()
 
 # Per-file warning overrides (third-party)
