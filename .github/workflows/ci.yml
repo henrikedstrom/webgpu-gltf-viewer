@@ -37,6 +37,8 @@ jobs:
             libxcursor-dev \
             libxi-dev \
             libxext-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
             libwayland-dev \
             libxkbcommon-dev \
             libgl1-mesa-dev
